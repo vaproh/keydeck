@@ -6,11 +6,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaproh/license-desk/internal/auth"
-	"github.com/vaproh/license-desk/internal/config"
-	"github.com/vaproh/license-desk/internal/licensing"
-	"github.com/vaproh/license-desk/internal/ota"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/licensing"
+	"github.com/vaproh/keydeck/internal/ota"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 type App struct {

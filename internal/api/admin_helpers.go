@@ -12,8 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/vaproh/license-desk/internal/config"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 func tsPtr(t pgtype.Timestamptz) *string {

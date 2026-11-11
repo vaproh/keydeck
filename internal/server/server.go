@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/vaproh/license-desk/web"
+	"github.com/vaproh/keydeck/web"
 )
 
 func License(logger *slog.Logger, api http.Handler) http.Handler {

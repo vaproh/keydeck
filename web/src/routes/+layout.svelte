@@ -46,7 +46,7 @@
 </script>
 
 <svelte:head>
-	<title>License desk · anomly</title>
+	<title>Keydeck · license control</title>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
@@ -58,10 +58,10 @@
 	<div class="min-h-screen lg:grid lg:grid-cols-[232px_1fr]">
 		<aside class="border-b border-border bg-card/80 backdrop-blur lg:min-h-screen lg:border-r lg:border-b-0">
 			<div class="flex h-16 items-center gap-3 px-5">
-				<div class="grid size-8 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">LD</div>
+				<img src={favicon} alt="" class="size-8 rounded-md" />
 				<div>
-					<p class="text-sm font-semibold tracking-tight">License desk</p>
-					<p class="text-[11px] text-muted-foreground">anomly.wtf</p>
+					<p class="text-sm font-semibold tracking-tight">Keydeck</p>
+					<p class="text-[11px] text-muted-foreground">license + release control</p>
 				</div>
 			</div>
 			<nav class="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">

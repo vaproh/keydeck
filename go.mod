@@ -1,4 +1,4 @@
-module github.com/vaproh/license-desk
+module github.com/vaproh/keydeck
 
 go 1.27.3
 

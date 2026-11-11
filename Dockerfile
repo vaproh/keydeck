@@ -14,10 +14,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/build ./web/build
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/desk ./cmd/desk
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keydeck ./cmd/keydeck
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=gobuild /out/desk /desk
+COPY --from=gobuild /out/keydeck /keydeck
 EXPOSE 8080 8081 8082
 USER nonroot:nonroot
-ENTRYPOINT ["/desk"]
+ENTRYPOINT ["/keydeck"]

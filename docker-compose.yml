@@ -3,8 +3,8 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-license}
-      POSTGRES_USER: ${POSTGRES_USER:-license}
+      POSTGRES_DB: ${POSTGRES_DB:-keydeck}
+      POSTGRES_USER: ${POSTGRES_USER:-keydeck}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -14,8 +14,8 @@ services:
       timeout: 3s
       retries: 20
 
-  desk:
-    image: ${DESK_IMAGE:-ghcr.io/vaproh/license-desk:latest}
+  keydeck:
+    image: ${KEYDECK_IMAGE:-ghcr.io/vaproh/keydeck:latest}
     build: .
     restart: unless-stopped
     labels:
@@ -27,17 +27,17 @@ services:
       PORT_LICENSE: 8080
       PORT_OTA: 8081
       PORT_ADMIN: 8082
-      DATABASE_URL: postgres://${POSTGRES_USER:-license}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-license}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-keydeck}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-keydeck}?sslmode=disable
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to the OTA https URL}
       ARTIFACTS_DIR: /data/artifacts
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?run desk passwd}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?run keydeck passwd}
       ADMIN_TOTP_SECRET: ${ADMIN_TOTP_SECRET:?set ADMIN_TOTP_SECRET}
       ADMIN_ACTOR: ${ADMIN_ACTOR:-admin}
       DOWNLOAD_SECRET: ${DOWNLOAD_SECRET:?set DOWNLOAD_SECRET}
-      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?run desk keygen}
-      UPDATE_SIGNING_KEY_REORCHESTRA: ${UPDATE_SIGNING_KEY_REORCHESTRA:?run desk keygen}
+      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?run keydeck keygen}
+      UPDATE_SIGNING_KEY_REORCHESTRA: ${UPDATE_SIGNING_KEY_REORCHESTRA:?run keydeck keygen}
     volumes:
       - artifacts:/data/artifacts
     expose:
@@ -45,7 +45,7 @@ services:
       - '8081'
       - '8082'
     healthcheck:
-      test: ['CMD', '/desk', 'healthcheck']
+      test: ['CMD', '/keydeck', 'healthcheck']
       interval: 10s
       timeout: 3s
       retries: 10
@@ -54,7 +54,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      desk:
+      keydeck:
         condition: service_healthy
     ports:
       - '80:80'

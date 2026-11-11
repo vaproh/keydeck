@@ -17,13 +17,13 @@ lint:
     go vet ./...
     cd web && pnpm exec svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.json
 
-# Build the frontend locally. Requires an AVX2-capable CPU for Vite 8.
+# Build the frontend locally.
 frontend:
     cd web && pnpm build
 
 # Build the production image
 build:
-    docker build -t license-desk:local .
+    docker build -t keydeck:local .
 
 # Start the VPS stack
 up:
@@ -35,11 +35,11 @@ down:
 
 # Follow container logs
 logs:
-    docker compose logs -f desk caddy
+    docker compose logs -f keydeck caddy
 
 # Regenerate sqlc code after changing migrations or queries
 sqlc:
-    /tmp/opencode/bin/sqlc generate
+    go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate
 
 # Production audit of frontend runtime dependencies
 audit:
@@ -47,12 +47,12 @@ audit:
 
 # Apply pending database migrations by starting the app once
 migrate:
-    docker compose run --rm desk /desk migrate
+    docker compose run --rm keydeck /keydeck migrate
 
 # Generate an Argon2 admin password hash
 passwd:
-    go run ./cmd/desk passwd
+    go run ./cmd/keydeck passwd
 
 # Generate product signing keys (usage: just keygen reorchestra)
 keygen product:
-    go run ./cmd/desk keygen {{product}}
+    go run ./cmd/keydeck keygen {{product}}

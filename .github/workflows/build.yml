@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main, master, migrate/go-svelte]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -12,12 +12,29 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: keydeck
+          POSTGRES_USER: keydeck
+          POSTGRES_PASSWORD: keydeck
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keydeck -d keydeck"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://keydeck:keydeck@localhost:5432/keydeck?sslmode=disable
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
           cache: true
+      - run: go vet ./...
       - run: go test ./...
       - uses: pnpm/action-setup@v4
         with:

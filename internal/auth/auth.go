@@ -21,8 +21,8 @@ import (
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/argon2"
 
-	"github.com/vaproh/license-desk/internal/config"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 const cookieName = "desk_session"

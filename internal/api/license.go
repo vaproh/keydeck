@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vaproh/license-desk/internal/licensing"
+	"github.com/vaproh/keydeck/internal/licensing"
 )
 
 func (a *App) LicenseRouter() http.Handler {

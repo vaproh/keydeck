@@ -25,7 +25,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		DatabaseURL:       env("DATABASE_URL", "postgres://license:license@localhost:5432/license?sslmode=disable"),
+		DatabaseURL:       env("DATABASE_URL", "postgres://keydeck:keydeck@localhost:5432/keydeck?sslmode=disable"),
 		PortLicense:       env("PORT_LICENSE", "8080"),
 		PortOTA:           env("PORT_OTA", "8081"),
 		PortAdmin:         env("PORT_ADMIN", "8082"),
