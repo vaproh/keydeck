@@ -1,20 +1,22 @@
-# Public API host: reachable from the internet.
-license.example.com {
+{$PUBLIC_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy license-api:8000
+	reverse_proxy desk:8080
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
 }
 
-# Admin host: only the operator network may connect. The allowlist below is
-# enforced by Caddy itself; replace the ranges with your VPN/office networks.
-admin.example.com {
-	@allowed remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1/32
-
-	handle @allowed {
-		encode zstd gzip
-		reverse_proxy license-admin:8000
-	}
-
-	handle {
-		respond "Not found" 404
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+	@blocked not remote_ip {$ADMIN_ALLOW}
+	respond @blocked "Not found" 404
+	reverse_proxy desk:8081
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
 	}
 }

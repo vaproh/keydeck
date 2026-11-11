@@ -1,10 +1,10 @@
 .git
+.github
 .venv
 __pycache__
 *.pyc
-*.db
-artifacts
-.env
 .pytest_cache
 .ruff_cache
-tests
+web/node_modules
+web/.svelte-kit
+web/build

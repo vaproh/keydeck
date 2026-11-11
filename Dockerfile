@@ -1,10 +1,23 @@
-FROM python:3.12-slim
-WORKDIR /srv
-COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /uvx /bin/
-COPY pyproject.toml uv.lock ./
-COPY lsapp ./lsapp
-COPY templates ./templates
-COPY static ./static
-RUN uv sync --frozen --no-dev
-ENV PATH="/srv/.venv/bin:$PATH"
-EXPOSE 8000
+# syntax=docker/dockerfile:1.7
+
+FROM node:24-bookworm-slim AS web
+WORKDIR /src/web
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
+FROM golang:1.27.3-bookworm AS gobuild
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=web /src/web/build ./web/build
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/desk ./cmd/desk
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=gobuild /out/desk /desk
+EXPOSE 8080 8081
+USER nonroot:nonroot
+ENTRYPOINT ["/desk"]

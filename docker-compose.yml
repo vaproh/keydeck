@@ -1,51 +1,57 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: licensing
-      POSTGRES_USER: licensing
+      POSTGRES_DB: ${POSTGRES_DB:-license}
+      POSTGRES_USER: ${POSTGRES_USER:-license}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
-  license-api:
-    build: .
-    command: uvicorn lsapp.api_public:app --host 0.0.0.0 --port 8000
-    env_file: .env
-    environment:
-      LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
-      LICENSE_ARTIFACTS_DIR: /artifacts
-      LICENSE_REQUIRE_PUBLIC_URL: "1"
-    volumes:
-      - artifacts:/artifacts
-    depends_on: [postgres]
+  desk:
+    image: ${DESK_IMAGE:-ghcr.io/vaproh/license-desk:latest}
     restart: unless-stopped
-
-  license-admin:
-    build: .
-    command: uvicorn lsapp.api_admin:app --host 0.0.0.0 --port 8000
-    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
-      LICENSE_ARTIFACTS_DIR: /artifacts
-      LICENSE_REQUIRE_PUBLIC_URL: "1"
-      ADMIN_COOKIE_SECURE: "1"
-    volumes:
-      - artifacts:/artifacts
-    depends_on: [postgres]
-    restart: unless-stopped
+      PORT_PUBLIC: 8080
+      PORT_ADMIN: 8081
+      DATABASE_URL: postgres://${POSTGRES_USER:-license}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-license}?sslmode=disable
+    expose:
+      - '8080'
+      - '8081'
+    healthcheck:
+      test: ['CMD', '/desk', 'healthcheck']
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   caddy:
     image: caddy:2-alpine
-    ports: ["80:80", "443:443"]
+    restart: unless-stopped
+    depends_on:
+      desk:
+        condition: service_healthy
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
+      ADMIN_ALLOW: ${ADMIN_ALLOW:?set ADMIN_ALLOW to your public IP or CIDR}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
-    depends_on: [license-api, license-admin]
-    restart: unless-stopped
+      - caddy_config:/config
 
 volumes:
   pgdata:
   caddy_data:
-  artifacts:
+  caddy_config:
