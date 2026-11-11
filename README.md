@@ -34,7 +34,7 @@ just build
 just up
 ```
 
-The frontend build requires an AVX2-capable CPU. Releases are built on GitHub Actions, not on the VPS.
+The frontend is built on GitHub Actions and embedded into the Go binary.
 
 ## Domains
 

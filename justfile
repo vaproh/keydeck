@@ -17,7 +17,7 @@ lint:
     go vet ./...
     cd web && pnpm exec svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.json
 
-# Build the frontend locally. Requires an AVX2-capable CPU for Vite 8.
+# Build the frontend locally.
 frontend:
     cd web && pnpm build
 
