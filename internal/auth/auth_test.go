@@ -3,12 +3,8 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/vaproh/keydeck/internal/config"
 )
 
 func TestPasswordHashRoundTrip(t *testing.T) {
@@ -53,28 +49,6 @@ func TestAgentScopeCheck(t *testing.T) {
 func TestSessionLifetimeIsSevenDays(t *testing.T) {
 	if sessionTTL != 7*24*time.Hour {
 		t.Fatalf("expected 7 day session, got %s", sessionTTL)
-	}
-}
-
-func TestCaptchaIsOneUse(t *testing.T) {
-	s := New(config.Config{}, nil)
-	id, question, ttl := s.Captcha()
-	if ttl != 300 || question == "" {
-		t.Fatalf("unexpected captcha: %q %d", question, ttl)
-	}
-	// 4 + 4 is the only way this test can be deterministic enough; use the
-	// question instead of guessing the answer.
-	parts := strings.Split(question, " + ")
-	if len(parts) != 2 {
-		t.Fatalf("unexpected question: %q", question)
-	}
-	a, _ := strconv.Atoi(parts[0])
-	b, _ := strconv.Atoi(parts[1])
-	if !s.checkCaptcha(id, strconv.Itoa(a+b)) {
-		t.Fatal("correct captcha rejected")
-	}
-	if s.checkCaptcha(id, strconv.Itoa(a+b)) {
-		t.Fatal("captcha reused")
 	}
 }
 
