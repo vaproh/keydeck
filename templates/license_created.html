@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Key issued</h1>
+<div class="banner">Copy this key now. Only the last four characters are stored.</div>
+<p class="key">{{ raw_key }}</p>
+<p class="muted">Product {{ product.slug }} · plan {{ license.plan_name }} · expires {{ license.expires_at.date() }} · max {{ license.max_activations }} activation(s)</p>
+<p><a href="/admin/licenses/{{ license.id }}" style="color:var(--accent)">Open key detail</a></p>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}License admin{% endblock %}</title>
+  <style>
+    :root { --bg:#0f1117; --panel:#171a23; --line:#262b38; --text:#e7ebf3; --muted:#8d95a6; --accent:#f2683c; --ok:#3ccf91; --bad:#ef5b6b; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui, sans-serif; }
+    header { display:flex; align-items:center; gap:18px; padding:14px 22px; border-bottom:1px solid var(--line); background:var(--panel); }
+    header strong { color:var(--accent); letter-spacing:.08em; text-transform:uppercase; font-size:12px; }
+    nav a { color:var(--muted); text-decoration:none; margin-right:14px; font-size:13px; }
+    nav a:hover { color:var(--text); }
+    main { max-width:1150px; margin:0 auto; padding:24px 22px 60px; }
+    h1 { font-size:19px; margin:0 0 18px; }
+    h2 { font-size:15px; margin:26px 0 10px; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:8px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+    .card span { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+    .card strong { display:block; font-size:24px; margin-top:4px; }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:top; }
+    th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+    tr:last-child td { border-bottom:0; }
+    form.inline { display:flex; flex-wrap:wrap; gap:8px; align-items:end; margin:12px 0 18px; }
+    label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); }
+    input, select, textarea { background:#11141c; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:inherit; min-width:120px; }
+    button { background:var(--accent); color:#1b0f08; border:0; border-radius:7px; padding:8px 13px; font-weight:650; cursor:pointer; }
+    button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+    .ok { color:var(--ok); } .bad { color:var(--bad); } .muted { color:var(--muted); }
+    .key { background:#0b0d13; border:1px dashed var(--accent); padding:10px 12px; border-radius:8px; font-family:ui-monospace,monospace; word-break:break-all; }
+    .banner { padding:10px 12px; border-radius:8px; background:#2a1a17; border:1px solid #5a2c22; color:#ffb9a6; margin-bottom:16px; }
+    .login { max-width:360px; margin:12vh auto; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; }
+    .login label, .login input { width:100%; }
+  </style>
+</head>
+<body>
+{% if session %}
+<header>
+  <strong>ReOrchestra admin</strong>
+  <nav>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/products">Products</a>
+    <a href="/admin/licenses">Keys</a>
+    <a href="/admin/releases">Releases</a>
+    <a href="/admin/audit">Audit</a>
+  </nav>
+  <form method="post" action="/admin/logout" style="margin-left:auto">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+    <button class="ghost" type="submit">Sign out</button>
+  </form>
+</header>
+{% endif %}
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

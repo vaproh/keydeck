@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Dashboard</h1>
+<div class="cards">
+  <div class="card"><span>Products</span><strong>{{ stats.products }}</strong></div>
+  <div class="card"><span>Keys</span><strong>{{ stats.licenses }}</strong></div>
+  <div class="card"><span>Active</span><strong class="ok">{{ stats.active }}</strong></div>
+  <div class="card"><span>Activations</span><strong>{{ stats.activations }}</strong></div>
+  <div class="card"><span>Expiring 30d</span><strong class="bad">{{ stats.expiring }}</strong></div>
+</div>
+<h2>Recent activity</h2>
+<table>
+  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th></tr>
+  {% for event in recent %}
+  <tr><td class="muted">{{ event.created_at }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td><td class="muted">{{ event.target }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No activity yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

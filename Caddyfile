@@ -1,8 +1,20 @@
+# Public API host: reachable from the internet.
 license.example.com {
+	encode zstd gzip
 	reverse_proxy license-api:8000
 }
 
+# Admin host: only the operator network may connect. The allowlist below is
+# enforced by Caddy itself; replace the ranges with your VPN/office networks.
 admin.example.com {
-	# Keep this host private: VPN or an allowlist in your firewall as well.
-	reverse_proxy license-admin:8000
+	@allowed remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.1/32
+
+	handle @allowed {
+		encode zstd gzip
+		reverse_proxy license-admin:8000
+	}
+
+	handle {
+		respond "Not found" 404
+	}
 }

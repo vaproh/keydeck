@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Products</h1>
+<form class="inline" method="post" action="/admin/products">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+  <label>Slug<input name="slug" required maxlength="40" placeholder="reorchestra" /></label>
+  <label>Name<input name="name" required maxlength="120" /></label>
+  <button type="submit">Create product</button>
+</form>
+<table>
+  <tr><th>Slug</th><th>Name</th><th>Status</th><th>Signing keys</th></tr>
+  {% for product in products %}
+  <tr>
+    <td>{{ product.slug }}</td>
+    <td>{{ product.name }}</td>
+    <td>{{ product.status }}</td>
+    <td>
+      <form method="post" action="/admin/products/{{ product.id }}/keys" class="inline" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+        <label>Key prefix<input name="prefix" value="reo" maxlength="12" /></label>
+        <button type="submit" class="ghost">Register keys</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="4" class="muted">No products yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

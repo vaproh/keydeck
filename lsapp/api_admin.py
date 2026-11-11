@@ -1,164 +1,348 @@
-"""Private admin API. Deploy behind VPN/allowlist; never expose publicly."""
+"""Private admin service: HTML panel plus a scoped release API.
+
+Human operators authenticate with Argon2 + TOTP and get an HttpOnly session
+cookie with CSRF protection. CI authenticates with a separate service token
+that is accepted only for release publishing.
+"""
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
 import os
+import secrets
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, UTC
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session as DbSession
 
-from .crypto import key_from_env, new_key, public_key_of, sha256_hex
-from .db import get_db
-from .models import AuditEvent, License, Product, ProductKey, Release
+from .crypto import (
+    make_lease,
+    new_key,
+    product_signing_env,
+    product_signing_key,
+    public_key_of,
+    sha256_hex,
+)
+from .db import get_db, init_db
+from .models import Activation, AuditEvent, License, Product, ProductKey, Release
 
-app = FastAPI(title="ReOrchestra license admin", version="1.0")
+TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="ReOrchestra license admin", version="1.0", lifespan=lifespan)
+
+
 _hasher = PasswordHasher()
-SESSIONS: dict[str, datetime] = {}
+
+SESSION_COOKIE = "reo_admin"
+SESSION_HOURS = int(os.getenv("ADMIN_SESSION_HOURS", "8"))
+SECURE_COOKIE = os.getenv("ADMIN_COOKIE_SECURE", "1") == "1"
+MAX_LOGIN_FAILURES = int(os.getenv("ADMIN_LOGIN_MAX_FAILURES", "5"))
+LOGIN_LOCK_MINUTES = int(os.getenv("ADMIN_LOGIN_LOCK_MINUTES", "15"))
+ALLOWED_SERVICE_SCOPE = "release.publish"
 
 
-def _require_session(token: str | None) -> str:
-    actor = SESSIONS.get(token or "")
-    if not actor or actor < datetime.now(UTC):
-        raise HTTPException(status_code=401, detail="Admin session required")
-    return token  # type: ignore[return-value]
+class AdminSession:
+    def __init__(self, actor: str):
+        self.actor = actor
+        self.csrf = secrets.token_urlsafe(24)
+        self.expires_at = datetime.now(UTC) + timedelta(hours=SESSION_HOURS)
+
+    def expired(self) -> bool:
+        return datetime.now(UTC) >= self.expires_at
 
 
-def _audit(db: Session, action: str, target: str = "", product_id: int | None = None, **meta):
-    db.add(AuditEvent(action=action, target=target, product_id=product_id,
-                       metadata_json=json.dumps(meta)))
+SESSIONS: dict[str, AdminSession] = {}
+_FAILURES: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def _login_blocked(ip: str) -> bool:
+    hits = _FAILURES[ip]
+    cutoff = datetime.now(UTC) - timedelta(minutes=LOGIN_LOCK_MINUTES)
+    while hits and hits[0] < cutoff:
+        hits.popleft()
+    return len(hits) >= MAX_LOGIN_FAILURES
+
+
+def _record_failure(ip: str) -> None:
+    _FAILURES[ip].append(datetime.now(UTC))
+
+
+def _session(request: Request) -> AdminSession | None:
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = SESSIONS.get(token)
+    if session and session.expired():
+        SESSIONS.pop(token, None)
+        return None
+    return session
+
+
+class LoginRequired(Exception):
+    """Raised by panel routes so the handler can redirect instead of erroring."""
+
+
+@app.exception_handler(LoginRequired)
+def _redirect_to_login(request: Request, exc: LoginRequired):
+    return RedirectResponse("/admin/login", status_code=303)
+
+
+def _require_session(request: Request) -> AdminSession:
+    session = _session(request)
+    if not session:
+        raise LoginRequired()
+    return session
+
+
+def _check_csrf(request: Request, form: dict) -> None:
+    session = _session(request)
+    if not session or form.get("csrf_token") != session.csrf:
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+
+def _require_service_token(token: str | None, scope: str) -> None:
+    expected = os.getenv("ADMIN_SERVICE_TOKEN", "")
+    if not expected or not token or not secrets.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Service token required")
+    if scope != ALLOWED_SERVICE_SCOPE:
+        raise HTTPException(status_code=403, detail="Token scope does not allow this action")
+
+
+def _audit(db: DbSession, action: str, target: str = "", product_id: int | None = None, actor: str = "operator", **meta):
+    db.add(
+        AuditEvent(
+            action=action,
+            target=target,
+            product_id=product_id,
+            actor=actor,
+            metadata_json=json.dumps(meta),
+        )
+    )
     db.commit()
 
 
-class LoginRequest(BaseModel):
-    password: str
-    totp: str = Field(min_length=6, max_length=8)
-
-
-class ProductRequest(BaseModel):
-    slug: str = Field(min_length=2, max_length=40)
-    name: str
-
-
-class KeyRequest(BaseModel):
-    plan_name: str = "standard"
-    limits: dict = Field(default_factory=dict)
-    features: list[str] = Field(default_factory=list)
-    days: int = Field(default=365, ge=1, le=3650)
-    max_activations: int = Field(default=1, ge=1, le=1000)
-    notes: str = ""
-
-
-@app.post("/v1/admin/login")
-def login(request: LoginRequest, http: Request):
+def _verify_credentials(password: str, totp: str) -> bool:
     import pyotp
 
     expected = os.getenv("LICENSE_ADMIN_PASSWORD_HASH", "")
     if not expected:
-        raise HTTPException(status_code=503, detail="Admin password not configured")
+        return False
     try:
-        _hasher.verify(expected, request.password)
+        _hasher.verify(expected, password)
     except VerifyMismatchError:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return False
     secret = os.getenv("LICENSE_ADMIN_TOTP_SECRET", "")
-    if not secret or not pyotp.TOTP(secret).verify(request.totp, valid_window=1):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    import secrets as _secrets
-
-    token = _secrets.token_urlsafe(32)
-    SESSIONS[token] = datetime.now(UTC) + timedelta(hours=8)
-    return {"token": token, "expires_in": 8 * 3600}
+    return bool(secret) and pyotp.TOTP(secret).verify(totp, valid_window=1)
 
 
-@app.post("/v1/admin/products")
-def create_product(
-    request: ProductRequest, db: Session = Depends(get_db), x_admin_token: str | None = Header(default=None)
-):
-    _require_session(x_admin_token)
-    product = db.query(Product).filter(Product.slug == request.slug).first()
-    if not product:
-        product = Product(slug=request.slug, name=request.name)
-        db.add(product)
-        db.commit()
-    _audit(db, "product.create", request.slug, product.id)
-    return {"id": product.id, "slug": product.slug}
-
-
-@app.get("/v1/admin/products")
-def list_products(db: Session = Depends(get_db), x_admin_token: str | None = Header(default=None)):
-    _require_session(x_admin_token)
-    return [{"id": p.id, "slug": p.slug, "name": p.name, "status": p.status} for p in db.query(Product)]
-
-
-@app.post("/v1/admin/products/{product_id}/keys")
-def create_product_keys(
-    product_id: int, db: Session = Depends(get_db), x_admin_token: str | None = Header(default=None)
-):
-    """Register the public halves the client and updater pin."""
-    _require_session(x_admin_token)
-    license_private = key_from_env("LICENSE_SIGNING_PRIVATE_KEY")
-    update_private = key_from_env("UPDATE_SIGNING_PRIVATE_KEY")
-    row = ProductKey(
-        product_id=product_id,
-        license_public_key=public_key_of(license_private),
-        update_public_key=public_key_of(update_private),
-        key_prefix=os.getenv("LICENSE_KEY_PREFIX", "reo"),
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="strict",
+        secure=SECURE_COOKIE,
+        max_age=SESSION_HOURS * 3600,
+        path="/",
     )
-    db.add(row)
-    db.commit()
-    _audit(db, "product.keys", str(product_id), product_id)
-    return {
-        "license_public_key": row.license_public_key,
-        "update_public_key": row.update_public_key,
-        "key_prefix": row.key_prefix,
+
+
+# ---------------------------------------------------------------- HTML panel
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return TEMPLATES.TemplateResponse(request, "login.html", {"error": ""})
+
+
+@app.post("/admin/login")
+async def login_submit(request: Request):
+    form = dict(await request.form())
+    ip = _client_ip(request)
+    if _login_blocked(ip):
+        return TEMPLATES.TemplateResponse(
+            request, "login.html", {"error": "Too many attempts. Wait and try again."}, status_code=429
+        )
+    if not _verify_credentials(form.get("password", ""), form.get("totp", "")):
+        _record_failure(ip)
+        return TEMPLATES.TemplateResponse(
+            request, "login.html", {"error": "Invalid credentials."}, status_code=401
+        )
+    _FAILURES.pop(ip, None)
+    token = secrets.token_urlsafe(32)
+    SESSIONS[token] = AdminSession(os.getenv("LICENSE_ADMIN_ACTOR", "operator"))
+    response = RedirectResponse("/admin", status_code=303)
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/admin/logout")
+async def logout(request: Request):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    token = request.cookies.get(SESSION_COOKIE, "")
+    SESSIONS.pop(token, None)
+    response = RedirectResponse("/admin/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+def _render(request: Request, name: str, **context):
+    session = _require_session(request)
+    return TEMPLATES.TemplateResponse(
+        request, name, {"session": session, "csrf": session.csrf, **context}
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def dashboard(request: Request, db: DbSession = Depends(get_db)):
+    soon = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=30)
+    stats = {
+        "products": db.query(Product).count(),
+        "licenses": db.query(License).count(),
+        "active": db.query(License).filter(License.status == "active").count(),
+        "activations": db.query(Activation).filter(Activation.revoked_at.is_(None)).count(),
+        "expiring": db.query(License)
+        .filter(License.status == "active", License.expires_at <= soon)
+        .count(),
     }
+    recent = db.query(AuditEvent).order_by(AuditEvent.id.desc()).limit(10).all()
+    return _render(request, "dashboard.html", stats=stats, recent=recent)
 
 
-@app.post("/v1/admin/products/{product_id}/licenses")
-def issue_license(
-    product_id: int,
-    request: KeyRequest,
-    db: Session = Depends(get_db),
-    x_admin_token: str | None = Header(default=None),
-):
-    _require_session(x_admin_token)
+@app.get("/admin/products", response_class=HTMLResponse)
+def products_page(request: Request, db: DbSession = Depends(get_db)):
+    return _render(request, "products.html", products=db.query(Product).order_by(Product.slug).all())
+
+
+@app.post("/admin/products")
+async def product_create(request: Request, db: DbSession = Depends(get_db)):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    slug = form.get("slug", "").strip().lower()
+    name = form.get("name", "").strip()
+    if not slug or not name:
+        raise HTTPException(status_code=400, detail="slug and name are required")
+    if not db.query(Product).filter(Product.slug == slug).first():
+        db.add(Product(slug=slug, name=name))
+        db.commit()
+        _audit(db, "product.create", slug)
+    return RedirectResponse("/admin/products", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/keys")
+async def product_keys(request: Request, product_id: int, db: DbSession = Depends(get_db)):
+    """Register the public halves of this product's own signing keys."""
+    form = dict(await request.form())
+    _check_csrf(request, form)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Unknown product")
-    prefix = os.getenv("LICENSE_KEY_PREFIX", "reo")
-    key = new_key(prefix)
-    row = License(
-        product_id=product_id,
-        key_hash=sha256_hex(key),
-        key_last4=key[-4:],
-        plan_name=request.plan_name,
-        limits_json=json.dumps(request.limits),
-        features_json=json.dumps(request.features),
-        expires_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=request.days),
-        max_activations=request.max_activations,
-        notes=request.notes,
+    license_env = product_signing_env(product.slug, "license")
+    update_env = product_signing_env(product.slug, "update")
+    row = ProductKey(
+        product_id=product.id,
+        license_public_key=public_key_of(product_signing_key(product.slug, "license")),
+        update_public_key=public_key_of(product_signing_key(product.slug, "update")),
+        key_prefix=form.get("prefix", "reo")[:12] or "reo",
+        license_key_ref=license_env,
+        update_key_ref=update_env,
     )
     db.add(row)
     db.commit()
-    _audit(db, "license.issue", key[-4:], product_id, plan=request.plan_name)
-    # The raw key is shown once and never stored.
-    return {"key": key, "id": row.id, "last4": row.key_last4, "expires_at": row.expires_at}
+    _audit(db, "product.keys", product.slug, product.id, license=license_env, update=update_env)
+    return RedirectResponse("/admin/products", status_code=303)
 
 
-@app.post("/v1/admin/licenses/{license_id}/{action}")
-def license_action(
-    license_id: int,
-    action: str,
-    days: int = 30,
-    db: Session = Depends(get_db),
-    x_admin_token: str | None = Header(default=None),
-):
-    _require_session(x_admin_token)
+@app.get("/admin/licenses", response_class=HTMLResponse)
+def licenses_page(request: Request, product_id: int | None = None, db: DbSession = Depends(get_db)):
+    query = db.query(License)
+    if product_id:
+        query = query.filter(License.product_id == product_id)
+    return _render(
+        request,
+        "licenses.html",
+        licenses=query.order_by(License.id.desc()).all(),
+        products=db.query(Product).order_by(Product.slug).all(),
+        selected_product=product_id,
+    )
+
+
+@app.post("/admin/products/{product_id}/licenses")
+async def license_create(request: Request, product_id: int, db: DbSession = Depends(get_db)):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    try:
+        limits = json.loads(form.get("limits") or "{}")
+        features = json.loads(form.get("features") or "[]")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="limits/features must be JSON")
+    key = new_key(form.get("prefix") or "reo")
+    row = License(
+        product_id=product.id,
+        key_hash=sha256_hex(key),
+        key_last4=key[-4:],
+        plan_name=(form.get("plan_name") or "standard")[:40],
+        limits_json=json.dumps(limits),
+        features_json=json.dumps(features),
+        expires_at=datetime.now(UTC).replace(tzinfo=None)
+        + timedelta(days=max(1, int(form.get("days") or 365))),
+        max_activations=max(1, int(form.get("max_activations") or 1)),
+        notes=form.get("notes", ""),
+    )
+    db.add(row)
+    db.commit()
+    _audit(db, "license.issue", key[-4:], product.id, plan=row.plan_name)
+    return _render(
+        request,
+        "license_created.html",
+        product=product,
+        license=row,
+        raw_key=key,
+    )
+
+
+@app.get("/admin/licenses/{license_id}", response_class=HTMLResponse)
+def license_detail(request: Request, license_id: int, db: DbSession = Depends(get_db)):
+    row = db.query(License).filter(License.id == license_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown license")
+    product = db.query(Product).filter(Product.id == row.product_id).first()
+    events = (
+        db.query(AuditEvent)
+        .filter(AuditEvent.target == str(license_id))
+        .order_by(AuditEvent.id.desc())
+        .limit(20)
+        .all()
+    )
+    return _render(
+        request, "license_detail.html", license=row, product=product, events=events
+    )
+
+
+@app.post("/admin/licenses/{license_id}/{action}")
+async def license_action(request: Request, license_id: int, action: str, db: DbSession = Depends(get_db)):
+    form = dict(await request.form())
+    _check_csrf(request, form)
     row = db.query(License).filter(License.id == license_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Unknown license")
@@ -167,7 +351,7 @@ def license_action(
         for activation in row.activations:
             activation.revoked_at = datetime.now(UTC).replace(tzinfo=None)
     elif action == "extend":
-        row.expires_at = row.expires_at + timedelta(days=days)
+        row.expires_at = row.expires_at + timedelta(days=int(form.get("days") or 30))
     elif action == "reset":
         for activation in row.activations:
             activation.revoked_at = datetime.now(UTC).replace(tzinfo=None)
@@ -175,7 +359,29 @@ def license_action(
         raise HTTPException(status_code=400, detail="Unknown action")
     db.commit()
     _audit(db, f"license.{action}", str(license_id), row.product_id)
-    return {"id": row.id, "status": row.status, "expires_at": row.expires_at}
+    return RedirectResponse(f"/admin/licenses/{license_id}", status_code=303)
+
+
+@app.get("/admin/releases", response_class=HTMLResponse)
+def releases_page(request: Request, db: DbSession = Depends(get_db)):
+    return _render(
+        request,
+        "releases.html",
+        releases=db.query(Release).order_by(Release.id.desc()).limit(50).all(),
+        products=db.query(Product).order_by(Product.slug).all(),
+    )
+
+
+@app.get("/admin/audit", response_class=HTMLResponse)
+def audit_page(request: Request, db: DbSession = Depends(get_db)):
+    return _render(
+        request,
+        "audit.html",
+        events=db.query(AuditEvent).order_by(AuditEvent.id.desc()).limit(200).all(),
+    )
+
+
+# ------------------------------------------------------------ release upload
 
 
 class ReleaseRequest(BaseModel):
@@ -189,29 +395,20 @@ class ReleaseRequest(BaseModel):
     notes: str = ""
 
 
-@app.post("/v1/admin/products/{product_id}/releases")
-def publish_release(
-    product_id: int,
-    request: ReleaseRequest,
-    db: Session = Depends(get_db),
-    x_admin_token: str | None = Header(default=None),
-):
-    """Publish immediately and sign a product-scoped manifest."""
-    from .crypto import make_lease
-
-    _require_session(x_admin_token)
-    payload = {
+def _publish_release(db: DbSession, product: Product, request: ReleaseRequest, actor: str) -> Release:
+    manifest = {
+        "product": product.slug,
         "version": request.version,
         "channel": request.channel,
         "platform": request.platform,
-        "sha256": request.sha256,
         "mandatory": request.mandatory,
         "security": request.security,
+        "sha256": request.sha256,
         "notes": request.notes,
     }
-    signature = make_lease(payload, key_from_env("UPDATE_SIGNING_PRIVATE_KEY"))
+    signature = make_lease(manifest, product_signing_key(product.slug, "update"))
     row = Release(
-        product_id=product_id,
+        product_id=product.id,
         version=request.version,
         channel=request.channel,
         platform=request.platform,
@@ -219,27 +416,28 @@ def publish_release(
         artifact_path=request.artifact_path,
         mandatory=request.mandatory,
         security=request.security,
+        notes=request.notes,
+        manifest_json=json.dumps(manifest),
         manifest_signature=signature,
         status="published",
-        notes=request.notes,
     )
     db.add(row)
     db.commit()
-    _audit(db, "release.publish", request.version, product_id, channel=request.channel)
-    return {"id": row.id, "version": row.version, "signature": signature}
+    _audit(db, "release.publish", f"{product.slug} {request.version}", product.id, actor=actor)
+    return row
 
 
-@app.get("/v1/admin/audit")
-def audit(limit: int = 100, db: Session = Depends(get_db), x_admin_token: str | None = Header(default=None)):
-    _require_session(x_admin_token)
-    rows = db.query(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(min(limit, 500))
-    return [
-        {"id": r.id, "actor": r.actor, "action": r.action, "target": r.target,
-         "metadata": json.loads(r.metadata_json or "{}"), "created_at": r.created_at}
-        for r in rows
-    ]
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.post("/v1/admin/products/{slug}/releases")
+def publish_release(
+    slug: str,
+    request: ReleaseRequest,
+    x_service_token: str | None = Header(default=None),
+    db: DbSession = Depends(get_db),
+):
+    """CI-only path: the service token cannot be used anywhere else."""
+    _require_service_token(x_service_token, ALLOWED_SERVICE_SCOPE)
+    product = db.query(Product).filter(Product.slug == slug).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    row = _publish_release(db, product, request, actor="ci")
+    return {"id": row.id, "version": row.version, "status": row.status}

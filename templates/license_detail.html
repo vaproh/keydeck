@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Key #{{ license.id }} · …{{ license.key_last4 }}</h1>
+<div class="cards">
+  <div class="card"><span>Product</span><strong>{{ product.slug if product else '—' }}</strong></div>
+  <div class="card"><span>Plan</span><strong>{{ license.plan_name }}</strong></div>
+  <div class="card"><span>Status</span><strong class="{{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</strong></div>
+  <div class="card"><span>Expires</span><strong>{{ license.expires_at.date() }}</strong></div>
+</div>
+<h2>Limits and features</h2>
+<p class="muted">limits {{ license.limits_json }}</p>
+<p class="muted">features {{ license.features_json }}</p>
+<h2>Actions</h2>
+<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/extend">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+  <label>Extend days<input name="days" type="number" value="30" min="1" /></label>
+  <button type="submit" class="ghost">Extend</button>
+</form>
+<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/reset">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+  <button type="submit" class="ghost">Reset activations</button>
+</form>
+<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/revoke">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+  <button type="submit">Revoke</button>
+</form>
+<h2>Activations</h2>
+<table>
+  <tr><th>Installation</th><th>Version</th><th>Last seen</th><th>Revoked</th></tr>
+  {% for activation in license.activations %}
+  <tr><td class="muted">{{ activation.installation_hash[:12] }}…</td><td>{{ activation.app_version }}</td><td>{{ activation.last_seen_at }}</td><td>{{ activation.revoked_at or '—' }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Never activated.</td></tr>{% endfor %}
+</table>
+<h2>Audit</h2>
+<table>
+  <tr><th>When</th><th>Actor</th><th>Action</th></tr>
+  {% for event in events %}<tr><td class="muted">{{ event.created_at }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No events.</td></tr>{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Audit</h1>
+<table>
+  <tr><th>ID</th><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Metadata</th></tr>
+  {% for event in events %}
+  <tr><td>{{ event.id }}</td><td class="muted">{{ event.created_at }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td><td>{{ event.target }}</td><td class="muted">{{ event.metadata_json }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No events yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

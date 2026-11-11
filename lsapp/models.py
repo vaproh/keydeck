@@ -34,6 +34,9 @@ class ProductKey(Base):
     license_public_key: Mapped[str] = mapped_column(String(128))
     update_public_key: Mapped[str] = mapped_column(String(128))
     key_prefix: Mapped[str] = mapped_column(String(12), default="reo")
+    # Name of the environment variable holding this product's private key.
+    license_key_ref: Mapped[str] = mapped_column(String(80), default="")
+    update_key_ref: Mapped[str] = mapped_column(String(80), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -85,6 +88,7 @@ class Release(Base):
     rollout_percent: Mapped[int] = mapped_column(Integer, default=100)
     sha256: Mapped[str] = mapped_column(String(64))
     artifact_path: Mapped[str] = mapped_column(String(300))
+    manifest_json: Mapped[str] = mapped_column(Text, default="{}")
     manifest_signature: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="draft")
     notes: Mapped[str] = mapped_column(Text, default="")

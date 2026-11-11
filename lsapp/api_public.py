@@ -16,11 +16,22 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .crypto import key_from_env, lease_claims, make_lease, sha256_hex
-from .db import get_db
+from .crypto import lease_claims, make_lease, product_signing_key, sha256_hex
+from .db import get_db, init_db
 from .models import Activation, License, Product, Release
 
-app = FastAPI(title="ReOrchestra license API", version="1.0")
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="ReOrchestra license API", version="1.0", lifespan=lifespan)
+
+
 DOWNLOAD_TTL = 900
 
 
@@ -66,7 +77,10 @@ def _activate(db: Session, request: ActivateRequest, ip: str) -> dict:
 
     limits = json.loads(row.limits_json or "{}")
     features = json.loads(row.features_json or "[]")
-    private = key_from_env("LICENSE_SIGNING_PRIVATE_KEY")
+    product = db.query(Product).filter(Product.id == row.product_id).first()
+    if not product:
+        raise HTTPException(status_code=500, detail="Product misconfigured")
+    private = product_signing_key(product.slug, "license")
     claims = lease_claims(row, request.installation_hash, limits, features)
     return {"lease": make_lease(claims, private), "plan_name": row.plan_name, "limits": limits, "features": features}
 

@@ -33,6 +33,24 @@ def key_from_env(name: str) -> Ed25519PrivateKey:
     return Ed25519PrivateKey.from_private_bytes(b64decode(raw))
 
 
+def product_env_suffix(slug: str) -> str:
+    return slug.upper().replace("-", "_").replace(".", "_")
+
+
+def product_signing_key(slug: str, kind: str) -> Ed25519PrivateKey:
+    """Resolve a per-product signing key; there is no global fallback.
+
+    Env names are `LICENSE_SIGNING_KEY_<SLUG>` and `UPDATE_SIGNING_KEY_<SLUG>`.
+    """
+    if kind not in {"license", "update"}:
+        raise ValueError(f"Unknown key kind: {kind}")
+    return key_from_env(f"{kind.upper()}_SIGNING_KEY_{product_env_suffix(slug)}")
+
+
+def product_signing_env(slug: str, kind: str) -> str:
+    return f"{kind.upper()}_SIGNING_KEY_{product_env_suffix(slug)}"
+
+
 def public_key_of(private: Ed25519PrivateKey) -> str:
     raw = private.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw

@@ -14,7 +14,7 @@ services:
     command: uvicorn lsapp.api_public:app --host 0.0.0.0 --port 8000
     environment:
       LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
-      LICENSE_SIGNING_PRIVATE_KEY: ${LICENSE_SIGNING_PRIVATE_KEY}
+      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?set per-product license key}
       LICENSE_DOWNLOAD_SECRET: ${LICENSE_DOWNLOAD_SECRET}
       LICENSE_OFFLINE_GRACE_HOURS: "24"
     depends_on: [postgres]
@@ -25,10 +25,12 @@ services:
     command: uvicorn lsapp.api_admin:app --host 0.0.0.0 --port 8000
     environment:
       LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
-      LICENSE_SIGNING_PRIVATE_KEY: ${LICENSE_SIGNING_PRIVATE_KEY}
-      UPDATE_SIGNING_PRIVATE_KEY: ${UPDATE_SIGNING_PRIVATE_KEY}
+      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA}
+      UPDATE_SIGNING_KEY_REORCHESTRA: ${UPDATE_SIGNING_KEY_REORCHESTRA:?set per-product update key}
       LICENSE_ADMIN_PASSWORD_HASH: ${LICENSE_ADMIN_PASSWORD_HASH}
       LICENSE_ADMIN_TOTP_SECRET: ${LICENSE_ADMIN_TOTP_SECRET}
+      ADMIN_SERVICE_TOKEN: ${ADMIN_SERVICE_TOKEN:?set CI service token}
+      ADMIN_COOKIE_SECURE: "1"
     depends_on: [postgres]
     restart: unless-stopped
 

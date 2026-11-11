@@ -20,6 +20,13 @@ engine = create_engine(database_url(), future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+def init_db() -> None:
+    """Create tables on startup so a fresh deployment never serves 500s."""
+    from . import models  # noqa: F401  (register mappers before create_all)
+
+    Base.metadata.create_all(engine)
+
+
 def get_db():
     db = SessionLocal()
     try:

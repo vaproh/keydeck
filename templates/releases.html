@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Releases</h1>
+<p class="muted">Publishing is done by CI with the service token. This page is read-only.</p>
+<table>
+  <tr><th>ID</th><th>Product</th><th>Version</th><th>Channel</th><th>Status</th><th>Mandatory</th><th>Created</th></tr>
+  {% for release in releases %}
+  <tr><td>#{{ release.id }}</td><td>{{ release.product_id }}</td><td>{{ release.version }}</td><td>{{ release.channel }}</td><td>{{ release.status }}</td><td>{{ 'yes' if release.mandatory else 'no' }}</td><td class="muted">{{ release.created_at }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No releases yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}
