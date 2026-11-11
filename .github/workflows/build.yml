@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main, master, migrate/go-svelte]
-    tags: ['v*']
   pull_request:
 
 permissions:
@@ -34,6 +33,7 @@ jobs:
           pnpm audit --prod --audit-level=high
           pnpm exec svelte-kit sync
           pnpm exec svelte-check --tsconfig ./tsconfig.json
+          pnpm build
 
   image:
     needs: test

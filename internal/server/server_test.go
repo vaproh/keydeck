@@ -15,7 +15,7 @@ func logger() *slog.Logger {
 func TestLicenseListenerDoesNotServeAdminOrOTA(t *testing.T) {
 	for _, path := range []string{"/admin", "/v1/update-check"} {
 		rec := httptest.NewRecorder()
-		License(logger()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		License(logger(), http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("license %s status = %d, want 404", path, rec.Code)
 		}
@@ -24,7 +24,7 @@ func TestLicenseListenerDoesNotServeAdminOrOTA(t *testing.T) {
 
 func TestOTAListenerDoesNotServeAdmin(t *testing.T) {
 	rec := httptest.NewRecorder()
-	OTA(logger()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
+	OTA(logger(), http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("ota /admin status = %d, want 404", rec.Code)
 	}
@@ -33,7 +33,7 @@ func TestOTAListenerDoesNotServeAdmin(t *testing.T) {
 func TestAdminListenerDoesNotServeLicenseOrOTA(t *testing.T) {
 	for _, path := range []string{"/v1/activate", "/v1/update-check"} {
 		rec := httptest.NewRecorder()
-		Admin(logger()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		Admin(logger(), http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("admin %s status = %d, want 404", path, rec.Code)
 		}
@@ -42,7 +42,7 @@ func TestAdminListenerDoesNotServeLicenseOrOTA(t *testing.T) {
 
 func TestAdminListenerServesAdmin(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Admin(logger()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
+	Admin(logger(), http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("admin /admin status = %d, want 200", rec.Code)
 	}
@@ -50,9 +50,9 @@ func TestAdminListenerServesAdmin(t *testing.T) {
 
 func TestHealth(t *testing.T) {
 	for name, handler := range map[string]http.Handler{
-		"license": License(logger()),
-		"ota":     OTA(logger()),
-		"admin":   Admin(logger()),
+		"license": License(logger(), http.NotFoundHandler()),
+		"ota":     OTA(logger(), http.NotFoundHandler()),
+		"admin":   Admin(logger(), http.NotFoundHandler()),
 	} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))

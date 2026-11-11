@@ -12,30 +12,33 @@ import (
 	"github.com/vaproh/license-desk/web"
 )
 
-func License(logger *slog.Logger) http.Handler {
+func License(logger *slog.Logger, api http.Handler) http.Handler {
 	r := chi.NewRouter()
 	base(r, logger)
+	r.Mount("/v1", api)
 	// Activation, heartbeat, and deactivation belong here. Never mount admin
 	// or OTA routes on the license listener.
 	return r
 }
 
-func OTA(logger *slog.Logger) http.Handler {
+func OTA(logger *slog.Logger, api http.Handler) http.Handler {
 	r := chi.NewRouter()
 	base(r, logger)
+	r.Mount("/v1", api)
 	// Update-check, manifest, and artifact download belong here.
 	return r
 }
 
-func Admin(logger *slog.Logger) http.Handler {
+func Admin(logger *slog.Logger, api http.Handler) http.Handler {
 	r := chi.NewRouter()
 	base(r, logger)
+	r.Mount("/api", api)
 
 	assets, err := fs.Sub(web.Dist, "build")
 	if err != nil {
 		panic(err)
 	}
-	files := http.FileServer(http.FS(assets))
+	files := http.StripPrefix("/admin", http.FileServer(http.FS(assets)))
 
 	r.Handle("/admin", spa(assets, files))
 	r.Handle("/admin/*", spa(assets, files))

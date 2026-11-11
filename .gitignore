@@ -1,8 +1,14 @@
+.env
+.env.*
+!.env.example
+artifacts/
+release/
+dist/
+*.db
+*.log
 .venv/
 __pycache__/
 *.pyc
-*.db
-artifacts/
-.env
 .pytest_cache/
 .ruff_cache/
+.DS_Store

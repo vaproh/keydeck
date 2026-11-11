@@ -1,121 +1,97 @@
 # License desk
 
-A private, multi-product license server and key management desk. Separate from
-any client repository.
+Open-source license and OTA server for Windows desktop products. One Go binary serves three isolated surfaces:
 
-Two deployables share one Postgres database and one artifact volume:
+| Surface | Default port | Purpose |
+|---|---:|---|
+| License API | `8080` | activation, heartbeat, deactivation |
+| OTA | `8081` | update check, signed manifest, artifact download |
+| Admin | `8082` | private SvelteKit control panel and admin API |
 
-| Service | Purpose | Exposure |
-| --- | --- | --- |
-| `lsapp.api_public` | activation, heartbeat, deactivate, update check, download | public |
-| `lsapp.api_admin` | dashboard, products, limits, features, plan presets, keys, releases, audit | private |
+The binary embeds the compiled SvelteKit frontend. Postgres is the source of truth for keys, activations, releases, sessions and audit events.
 
-Updating the admin container never restarts the public API. Client OTA never
-updates either service.
+## Stack
 
-## What the desk manages
+- Go 1.27, chi, net/http
+- Postgres 18, pgx, sqlc
+- SvelteKit 3, Svelte 5, TypeScript
+- Tailwind CSS, shadcn-svelte, Lucide, Motion
+- Docker Compose on the VPS; no systemd
 
-- Products with their own signing keys, prefix and status.
-- Product limits and features, used as the vocabulary for plans and keys.
-- Plan presets: trial, timed, lifetime; validity, activations, grace, limits,
-  features.
-- Keys with per-key plan name, limits, features, expiry, activations, notes.
-- Activation records, revocation, reset, extend, deactivate.
-- Releases and signed OTA manifests, per product and channel.
-- Audit history.
-
-There is no pricing, billing, customer portal or tier monetization.
-
-## Login
-
-Password + TOTP + a single-use math captcha. Sessions are HttpOnly,
-SameSite=strict, with CSRF on every form. Failed attempts are rate-limited by
-address.
-
-Generate the credentials once:
-
-```bash
-uv run python - <<'PY'
-from argon2 import PasswordHasher
-import pyotp
-print("password hash:", PasswordHasher().hash("replace-me"))
-print("totp secret:", pyotp.random_base32())
-PY
-```
-
-Set `LICENSE_ADMIN_PASSWORD_HASH` and `LICENSE_ADMIN_TOTP_SECRET`.
-
-## Local development
-
-```bash
-uv sync --all-groups
-export LICENSE_DB_URL=sqlite:///./license.db
-export PUBLIC_BASE_URL=http://127.0.0.1:8000
-export LICENSE_DOWNLOAD_SECRET=dev-secret
-export LICENSE_ADMIN_PASSWORD_HASH='...'
-export LICENSE_ADMIN_TOTP_SECRET='...'
-export ADMIN_COOKIE_SECURE=0
-export LICENSE_SIGNING_KEY_REORCHESTRA='...'
-export UPDATE_SIGNING_KEY_REORCHESTRA='...'
-uv run uvicorn lsapp.api_admin:app --reload --port 8000
-```
-
-Public API runs separately:
-
-```bash
-uv run uvicorn lsapp.api_public:app --reload --port 8001
-```
-
-The admin desk is at `/admin`. The login page is `/admin/login`.
-
-## Keys
-
-Generate one pair per product and store the private halves offline:
-
-```bash
-uv run python - <<'PY'
-import base64
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-for name in ("LICENSE_SIGNING_KEY_REORCHESTRA", "UPDATE_SIGNING_KEY_REORCHESTRA"):
-    key = Ed25519PrivateKey.generate()
-    print(name, base64.urlsafe_b64encode(key.private_bytes_raw()).decode().rstrip("="))
-PY
-```
-
-`ProductKey` stores only public halves and env variable names. Never commit
-private keys.
-
-## Deploy
+## Local setup
 
 ```bash
 cp .env.example .env
-# fill .env
-docker compose up -d --build
+go run ./cmd/desk keygen reorchestra   # put the output in .env
+go run ./cmd/desk passwd               # put the hash in ADMIN_PASSWORD_HASH
 ```
 
-Point `license.example.com` at the public API and `admin.example.com` at the
-admin service. Keep admin behind VPN/IP allowlist. Replace the sample ranges in
-`Caddyfile`. Back up Postgres, artifacts and signing keys.
-
-## Tests
+Fill in `ADMIN_TOTP_SECRET` from your authenticator and set a long random `DOWNLOAD_SECRET`.
 
 ```bash
-uv run pytest -q
-uv run ruff check .
+just test
+just build
+just up
 ```
 
-## API contract
+The frontend build requires an AVX2-capable CPU. Releases are built on GitHub Actions, not on the VPS.
 
-Public:
+## Domains
 
-- `POST /v1/activate`
-- `POST /v1/heartbeat`
-- `POST /v1/deactivate`
-- `GET /v1/update-check`
-- `GET /v1/download/{id}`
+Point three DNS records at the VPS:
 
-Admin: browser routes under `/admin`; CI release publish at
-`POST /v1/admin/products/{slug}/releases` with `X-Service-Token`.
+- `license.example.com` → `:8080`
+- `ota.example.com` → `:8081`
+- `admin.example.com` → `:8082`
 
-The server is the key clock. Responses include `server_now`,
-`remaining_seconds`, `expires_at` and `grace_seconds`.
+Caddy terminates TLS for all three. The admin host is restricted by `ADMIN_ALLOW` (IP or CIDR). The license and OTA hosts are public.
+
+## Release flow
+
+Every protected `v*` tag builds and publishes:
+
+1. Go tests.
+2. Frontend production build.
+3. Linux binary with embedded frontend.
+4. Multi-platform Docker image at `ghcr.io/<owner>/license-desk`.
+5. GitHub release with automatically generated release notes.
+6. Self-contained VPS bundle containing `docker-compose.yml`, `Caddyfile`, `.env.example`, the compiled `desk` binary and the compiled frontend.
+
+On the VPS, download the latest bundle once, fill `.env`, and run:
+
+```bash
+docker compose up -d
+```
+
+The stack includes Watchtower. When a new `latest` image is published, it pulls and restarts the app container. Postgres and Caddy keep running.
+
+## License behavior
+
+- **Trial**: starts on first activation, one-time, one activation, zero grace.
+- **Timed**: starts on issue or first activation, configurable days, admin extendable.
+- **Lifetime**: no expiry, still revocable and heartbeat-checked.
+- Per-key `plan_name`, `limits`, `features`, `max_activations`, expiry, notes.
+- The server is the key clock. Clients use `server_now`, `expires_at` and `remaining_seconds`; the local Windows clock is never authoritative.
+- Activation, heartbeat and deactivation are idempotent enough for retries. Signed Ed25519 leases bind the product, installation, plan, limits and expiry.
+
+## OTA behavior
+
+- Product-scoped signed manifests.
+- SHA-256 verified by the client.
+- Short-lived HMAC download URLs.
+- Stable and beta channels.
+- Artifacts are stored under `ARTIFACTS_DIR` and mounted as a Docker volume.
+
+## Operations
+
+```bash
+just logs
+just migrate
+just down
+```
+
+Never commit `.env`, signing keys, the download secret, password hashes, TOTP secrets or database dumps.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
