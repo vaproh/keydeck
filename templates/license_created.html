@@ -1,8 +1,40 @@
 {% extends "base.html" %}
+{% block title %}Key issued{% endblock %}
+{% block crumbs %}<span>/</span><a href="/admin/licenses">Keys</a><span>/</span><strong>New key</strong>{% endblock %}
 {% block body %}
-<h1>Key issued</h1>
-<div class="banner">Copy this key now. Only the last four characters are stored.</div>
-<p class="key">{{ raw_key }}</p>
-<p class="muted">Product {{ product.slug }} · plan {{ license.plan_name }} · type {{ license.key_type }} · {% if license.key_type == 'lifetime' %}never expires{% elif license.key_type == 'trial' %}{{ license.trial_minutes }} minute trial{% else %}{{ license.validity_days }} day validity{% endif %} · max {{ license.max_activations }} activation(s)</p>
-<p><a href="/admin/licenses/{{ license.id }}" style="color:var(--accent)">Open key detail</a></p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Issued · {{ product.slug }}</p>
+    <h1>Copy it now.</h1>
+    <p class="lede">This is the only time the raw key is shown. Store it somewhere safe before leaving this page.</p>
+  </div>
+  <div class="head-actions"><a class="button ghost" href="/admin/licenses/{{ license.id }}">Open key</a><a class="button" href="/admin/licenses">Issue another</a></div>
+</div>
+
+<div class="key-card">
+  <div class="key-hero">
+    <div>
+      <p class="eyebrow">{{ product.name }} · {{ license.plan_name }}</p>
+      <div class="key-meta">
+        <span class="stamp mute">{{ license.key_type }}</span>
+        <span class="stamp {{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</span>
+        <span class="stamp mute">{{ license.max_activations }} activation{{ '' if license.max_activations == 1 else 's' }}</span>
+      </div>
+    </div>
+    <div class="secret-key">
+      <div class="tiny">Raw key</div>
+      <div class="key">{{ raw_key }}</div>
+      <div class="form-actions"><button class="small" type="button" onclick='deskCopy({{ raw_key|tojson }})'>Copy key</button></div>
+    </div>
+  </div>
+  <div class="key-facts">
+    <div class="key-fact"><label>Validity</label><strong>{% if license.key_type == 'lifetime' %}Never expires{% elif license.key_type == 'trial' %}{{ license.trial_minutes }} minutes after activation{% else %}{{ license.validity_days }} days{% endif %}</strong></div>
+    <div class="key-fact"><label>Starts</label><strong>{{ 'On activation' if license.starts_on_activation else 'On issue' }}</strong></div>
+    <div class="key-fact"><label>Grace</label><strong>{{ license.grace_seconds }}s</strong></div>
+    <div class="key-fact"><label>Key ID</label><strong class="mono">…{{ license.key_last4 }}</strong></div>
+  </div>
+  <div class="panel" style="margin-top: 24px"><div class="panel-body">
+    <p class="hint" style="margin:0">A client cannot use this key on another product. Activation starts the clock for trial and start-on-activation keys. Revoking this key stops new leases, but existing installations still need to heartbeat to learn that.</p>
+  </div></div>
+</div>
 {% endblock %}

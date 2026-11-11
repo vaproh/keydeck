@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }}{% endblock %}
+{% block crumbs %}<span>/</span><a href="/admin/products">Products</a><span>/</span><strong>{{ product.slug }}</strong>{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Product ledger · {{ product.slug }}</p>
+    <h1>{{ product.name }}</h1>
+    <p class="lede">Define what this product can sell, issue a key against a plan, and keep the release shelf current.</p>
+  </div>
+  <div class="head-actions">
+    <span class="stamp {{ 'ok' if product.status == 'active' else 'bad' }}">{{ product.status }}</span>
+    <form method="post" action="/admin/products/{{ product.id }}/status">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+      <button class="ghost small" type="submit">{{ 'Disable product' if product.status == 'active' else 'Enable product' }}</button>
+    </form>
+    <a class="button" href="/admin/licenses?product_id={{ product.id }}">Issue key</a>
+  </div>
+</div>
+
+<section class="split-list">
+  <div class="list-block">
+    <header><strong>Signing keys</strong><span class="stamp {{ 'ok' if signing else 'warn' }}">{{ 'registered' if signing else 'missing' }}</span></header>
+    <div class="panel-body">
+      {% if signing %}
+      <dl class="definition-list">
+        <div class="definition"><dt>Prefix</dt><dd class="mono">{{ signing.key_prefix }}</dd></div>
+        <div class="definition"><dt>License key</dt><dd class="code">{{ signing.license_key_ref }}</dd></div>
+        <div class="definition"><dt>Update key</dt><dd class="code">{{ signing.update_key_ref }}</dd></div>
+        <div class="definition"><dt>License public</dt><dd class="code">{{ signing.license_public_key[:26] }}…</dd></div>
+        <div class="definition"><dt>Update public</dt><dd class="code">{{ signing.update_public_key[:26] }}…</dd></div>
+      </dl>
+      {% else %}
+      <p class="hint">Register the public halves once the env keys are set.</p>
+      {% endif %}
+      <form class="form" style="margin-top: 14px" method="post" action="/admin/products/{{ product.id }}/keys">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+        <label class="field"><span>Key prefix</span><input name="prefix" value="{{ signing.key_prefix if signing else 'reo' }}" maxlength="12" /></label>
+        <div class="form-actions"><button class="ghost" type="submit">{{ 'Refresh keys' if signing else 'Register keys' }}</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="list-block" id="limits">
+    <header><strong>Limits</strong><span class="stamp mute">{{ limits|length }}</span></header>
+    <ul>
+      {% for limit in limits %}
+      <li>
+        <div style="display:flex; justify-content:space-between; gap:10px">
+          <div><b>{{ limit.label }}</b><div class="mono">{{ limit.limit_key }} · {{ limit.value_type }}</div></div>
+          <form method="post" action="/admin/products/{{ product.id }}/limits/{{ limit.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+            <button class="ghost small" type="submit">Remove</button>
+          </form>
+        </div>
+      </li>
+      {% else %}<li class="empty">No limits defined. Add <span class="code">max_accounts</span> to start.</li>{% endfor %}
+    </ul>
+    <div class="panel-body">
+      <details>
+        <summary class="tiny" style="cursor:pointer">Add or update limit</summary>
+        <form class="form" style="margin-top: 12px" method="post" action="/admin/products/{{ product.id }}/limits">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <div class="form-row">
+            <label class="field"><span>Key</span><input name="limit_key" placeholder="max_accounts" required /></label>
+            <label class="field"><span>Label</span><input name="label" placeholder="Accounts" /></label>
+          </div>
+          <label class="field"><span>Type</span><select name="value_type"><option value="integer">Integer</option><option value="boolean">Boolean</option><option value="string">String</option></select></label>
+          <label class="field"><span>Description</span><input name="description" placeholder="What this limit controls" /></label>
+          <div class="form-actions"><button class="small" type="submit">Save limit</button></div>
+        </form>
+      </details>
+    </div>
+  </div>
+
+  <div class="list-block" id="features">
+    <header><strong>Features</strong><span class="stamp mute">{{ features|length }}</span></header>
+    <ul>
+      {% for feature in features %}
+      <li>
+        <div style="display:flex; justify-content:space-between; gap:10px">
+          <div><b>{{ feature.label }}</b><div class="mono">{{ feature.feature_key }}</div></div>
+          <form method="post" action="/admin/products/{{ product.id }}/features/{{ feature.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+            <button class="ghost small" type="submit">Remove</button>
+          </form>
+        </div>
+      </li>
+      {% else %}<li class="empty">No features defined. Add <span class="code">warmup</span> or <span class="code">campaigns</span>.</li>{% endfor %}
+    </ul>
+    <div class="panel-body">
+      <details>
+        <summary class="tiny" style="cursor:pointer">Add or update feature</summary>
+        <form class="form" style="margin-top: 12px" method="post" action="/admin/products/{{ product.id }}/features">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <div class="form-row">
+            <label class="field"><span>Key</span><input name="feature_key" placeholder="warmup" required /></label>
+            <label class="field"><span>Label</span><input name="label" placeholder="Warmup" /></label>
+          </div>
+          <label class="field"><span>Description</span><input name="description" placeholder="What this feature unlocks" /></label>
+          <div class="form-actions"><button class="small" type="submit">Save feature</button></div>
+        </form>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="plans">
+  <div class="section-head"><h2>Plan presets</h2><span class="tiny">Reusable starting points for keys</span></div>
+  <div class="split-list">
+    {% for preset in presets %}
+    <div class="list-block">
+      <header><strong>{{ preset.name }}</strong><span class="stamp mute">{{ preset.key_type }}</span></header>
+      <div class="panel-body">
+        <dl class="definition-list">
+          <div class="definition"><dt>Validity</dt><dd>{% if preset.key_type == 'lifetime' %}Never{% elif preset.key_type == 'trial' %}{{ preset.trial_minutes }} minutes{% else %}{{ preset.validity_days }} days{% endif %}</dd></div>
+          <div class="definition"><dt>Activations</dt><dd>{{ preset.max_activations }}</dd></div>
+          <div class="definition"><dt>Limits</dt><dd class="code">{{ preset.limits_json }}</dd></div>
+          <div class="definition"><dt>Features</dt><dd class="code">{{ preset.features_json }}</dd></div>
+        </dl>
+        <form method="post" style="margin-top: 12px" action="/admin/products/{{ product.id }}/presets/{{ preset.id }}/delete">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <button class="ghost small" type="submit">Remove preset</button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="panel"><div class="empty"><strong>No plans yet.</strong>Create Trial, Monthly or Lifetime presets below.</div></div>
+    {% endfor %}
+  </div>
+  <details class="panel" style="margin-top: 14px"><summary class="panel-head" style="cursor:pointer"><h2>Add plan preset</h2></summary>
+    <div class="panel-body">
+      <form class="form" method="post" action="/admin/products/{{ product.id }}/presets">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+        <div class="form-row">
+          <label class="field"><span>Plan name</span><input name="name" placeholder="Monthly" required /></label>
+          <label class="field"><span>Type</span><select name="key_type"><option value="timed">Timed</option><option value="trial">Trial</option><option value="lifetime">Lifetime</option></select></label>
+          <label class="field"><span>Validity days</span><input name="validity_days" type="number" value="30" min="1" /></label>
+          <label class="field"><span>Trial minutes</span><input name="trial_minutes" type="number" value="15" min="1" /></label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Max activations</span><input name="max_activations" type="number" value="1" min="1" /></label>
+          <label class="field"><span>Grace seconds</span><input name="grace_seconds" type="number" value="0" min="0" /></label>
+          <label class="check"><input name="starts_on_activation" type="checkbox" value="1" checked /> Starts on activation</label>
+          <label class="check"><input name="one_time_activation" type="checkbox" value="1" /> One-time activation</label>
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Limits JSON</span><input name="limits" value='{"max_accounts": 50}' /></label>
+          <label class="field"><span>Features JSON</span><input name="features" value='["warmup"]' /></label>
+        </div>
+        <div class="form-actions"><button type="submit">Create preset</button></div>
+      </form>
+    </div>
+  </details>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Recent keys</h2><a class="tiny" href="/admin/licenses?product_id={{ product.id }}">All keys →</a></div>
+  <div class="panel"><div class="table-wrap">
+    <table>
+      <thead><tr><th>Key</th><th>Plan</th><th>Type</th><th>Expires</th><th>Activations</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for row in keys %}
+      <tr>
+        <td><a class="key-id" href="/admin/licenses/{{ row.id }}">…{{ row.key_last4 }}</a></td>
+        <td>{{ row.plan_name }}</td>
+        <td><span class="stamp mute">{{ row.key_type }}</span></td>
+        <td class="mono">{% if row.key_type == 'lifetime' %}Never{% elif row.activation_expires_at %}{{ row.activation_expires_at.strftime('%d %b %Y') }}{% elif row.starts_on_activation %}On activation{% else %}{{ row.expires_at.strftime('%d %b %Y') }}{% endif %}</td>
+        <td class="mono">{{ row.activations|length }}/{{ row.max_activations }}</td>
+        <td><span class="stamp {{ 'ok' if row.status == 'active' else 'bad' }}">{{ row.status }}</span></td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="empty"><strong>No keys yet.</strong>Issue the first key from the button above.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+</section>
+{% endblock %}

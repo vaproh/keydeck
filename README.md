@@ -1,18 +1,76 @@
-# License platform (R5)
+# License desk
 
-Two deployables sharing one Postgres database and one artifact volume:
+A private, multi-product license server and key management desk. Separate from
+any client repository.
+
+Two deployables share one Postgres database and one artifact volume:
 
 | Service | Purpose | Exposure |
 | --- | --- | --- |
-| `lsapp.api_public` | activation, heartbeat, update check, download token | `license.example.com` |
-| `lsapp.api_admin` | products, keys, licences, audit | `admin.example.com`, private only |
+| `lsapp.api_public` | activation, heartbeat, deactivate, update check, download | public |
+| `lsapp.api_admin` | dashboard, products, limits, features, plan presets, keys, releases, audit | private |
 
-Updating the admin container never restarts the public API, and client OTA never
-touches either server.
+Updating the admin container never restarts the public API. Client OTA never
+updates either service.
+
+## What the desk manages
+
+- Products with their own signing keys, prefix and status.
+- Product limits and features, used as the vocabulary for plans and keys.
+- Plan presets: trial, timed, lifetime; validity, activations, grace, limits,
+  features.
+- Keys with per-key plan name, limits, features, expiry, activations, notes.
+- Activation records, revocation, reset, extend, deactivate.
+- Releases and signed OTA manifests, per product and channel.
+- Audit history.
+
+There is no pricing, billing, customer portal or tier monetization.
+
+## Login
+
+Password + TOTP + a single-use math captcha. Sessions are HttpOnly,
+SameSite=strict, with CSRF on every form. Failed attempts are rate-limited by
+address.
+
+Generate the credentials once:
+
+```bash
+uv run python - <<'PY'
+from argon2 import PasswordHasher
+import pyotp
+print("password hash:", PasswordHasher().hash("replace-me"))
+print("totp secret:", pyotp.random_base32())
+PY
+```
+
+Set `LICENSE_ADMIN_PASSWORD_HASH` and `LICENSE_ADMIN_TOTP_SECRET`.
+
+## Local development
+
+```bash
+uv sync --all-groups
+export LICENSE_DB_URL=sqlite:///./license.db
+export PUBLIC_BASE_URL=http://127.0.0.1:8000
+export LICENSE_DOWNLOAD_SECRET=dev-secret
+export LICENSE_ADMIN_PASSWORD_HASH='...'
+export LICENSE_ADMIN_TOTP_SECRET='...'
+export ADMIN_COOKIE_SECURE=0
+export LICENSE_SIGNING_KEY_REORCHESTRA='...'
+export UPDATE_SIGNING_KEY_REORCHESTRA='...'
+uv run uvicorn lsapp.api_admin:app --reload --port 8000
+```
+
+Public API runs separately:
+
+```bash
+uv run uvicorn lsapp.api_public:app --reload --port 8001
+```
+
+The admin desk is at `/admin`. The login page is `/admin/login`.
 
 ## Keys
 
-Generate once, store offline, never in the repo:
+Generate one pair per product and store the private halves offline:
 
 ```bash
 uv run python - <<'PY'
@@ -24,82 +82,40 @@ for name in ("LICENSE_SIGNING_KEY_REORCHESTRA", "UPDATE_SIGNING_KEY_REORCHESTRA"
 PY
 ```
 
-Register the public halves with `POST /v1/admin/products/{id}/keys`; the client
-pins their SPKI hashes.
-
-## Admin login
-
-Argon2 password hash plus TOTP:
-
-```bash
-uv run python -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('…'))"
-uv run python -c "import pyotp; print(pyotp.random_base32())"
-```
-
-Set `LICENSE_ADMIN_PASSWORD_HASH` and `LICENSE_ADMIN_TOTP_SECRET`, then
-`POST /v1/admin/login` for an 8-hour bearer token.
-
-## Licences
-
-Per key: `plan_name`, `limits_json`, `features_json`, `expires_at`,
-`max_activations`. The raw key is returned **once**; only its SHA-256 and last
-four characters are stored. Actions: `revoke`, `reset` activations, `extend`.
-
-No pricing, tiers, invoices, billing or customer portal exist by design.
+`ProductKey` stores only public halves and env variable names. Never commit
+private keys.
 
 ## Deploy
 
 ```bash
-export POSTGRES_PASSWORD=… LICENSE_SIGNING_KEY_REORCHESTRA=… UPDATE_SIGNING_KEY_REORCHESTRA=…
-export LICENSE_DOWNLOAD_SECRET=… LICENSE_ADMIN_PASSWORD_HASH=… LICENSE_ADMIN_TOTP_SECRET=…
+cp .env.example .env
+# fill .env
 docker compose up -d --build
 ```
 
-Point `license.example.com` and `admin.example.com` at the host, keep admin
-behind VPN/allowlist, and back up Postgres plus the signing keys.
+Point `license.example.com` at the public API and `admin.example.com` at the
+admin service. Keep admin behind VPN/IP allowlist. Replace the sample ranges in
+`Caddyfile`. Back up Postgres, artifacts and signing keys.
 
 ## Tests
 
 ```bash
-uv run pytest license-server/tests -q
+uv run pytest -q
+uv run ruff check .
 ```
 
-## Admin panel
+## API contract
 
-The private service serves an HTML panel at `/admin`:
+Public:
 
-- `/admin/login` — password (Argon2) plus TOTP; issues an HttpOnly,
-  SameSite=strict session cookie. Set `ADMIN_COOKIE_SECURE=0` only for local
-  HTTP development.
-- `/admin` — product, key, activation and expiring-key counts with recent audit.
-- `/admin/products` — create products and register their signing keys.
-- `/admin/licenses` — issue keys (plan, limits JSON, features, expiry, max
-  activations) and filter by product.
-- `/admin/licenses/{id}` — extend, reset activations, revoke, audit trail.
-- `/admin/releases`, `/admin/audit` — read-only history.
+- `POST /v1/activate`
+- `POST /v1/heartbeat`
+- `POST /v1/deactivate`
+- `GET /v1/update-check`
+- `GET /v1/download/{id}`
 
-Forms require the CSRF token rendered into the page. Five failed logins from
-one address within 15 minutes lock that address out temporarily.
+Admin: browser routes under `/admin`; CI release publish at
+`POST /v1/admin/products/{slug}/releases` with `X-Service-Token`.
 
-### Per-product signing keys
-
-There is no global signing key. Each product reads:
-
-- `LICENSE_SIGNING_KEY_<SLUG>` — signs activation leases.
-- `UPDATE_SIGNING_KEY_<SLUG>` — signs OTA manifests.
-
-`<SLUG>` is the product slug, upper-cased with dashes and dots replaced by
-underscores (for example `my-app` → `MY_APP`). `ProductKey` stores only the
-public halves plus the environment variable name, never private material.
-
-### CI service token
-
-`ADMIN_SERVICE_TOKEN` is separate from any human session and is accepted only
-by `POST /v1/admin/products/{slug}/releases`. A browser cookie cannot call it,
-and the token cannot reach any other admin route.
-
-### Caddy allowlist
-
-`Caddyfile` restricts `admin.example.com` with an explicit `remote_ip`
-allowlist and answers anything else with 404. Replace the sample ranges with
-your VPN or office networks; the comment alone is not the control.
+The server is the key clock. Responses include `server_now`,
+`remaining_seconds`, `expires_at` and `grace_seconds`.

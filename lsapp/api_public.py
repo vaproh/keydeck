@@ -9,7 +9,8 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime, timedelta, UTC
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -26,8 +27,6 @@ from .crypto import (
 )
 from .db import get_db, init_db
 from .models import Activation, License, Product, Release
-
-from contextlib import asynccontextmanager
 
 
 @asynccontextmanager

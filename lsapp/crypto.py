@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import secrets
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -87,6 +87,32 @@ def sign_manifest(payload: dict, key: Ed25519PrivateKey) -> str:
     """Sign the canonical body itself so clients can rebuild it byte-for-byte."""
     raw = canonical_json(payload).encode()
     return f"{b64encode(raw)}.{b64encode(key.sign(raw))}"
+
+
+def verify_manifest(
+    token_or_manifest, signature_or_key: str, public_key: str | None = None
+) -> dict:
+    """Accept either a signed token or a manifest plus detached signature."""
+    if public_key is None:
+        body, signature = token_or_manifest.split(".", 1)
+        raw = b64decode(body)
+        key = signature_or_key
+    elif "." in signature_or_key:
+        body, signature = signature_or_key.split(".", 1)
+        raw = b64decode(body)
+        key = public_key
+    else:
+        raw = (
+            canonical_json(token_or_manifest).encode()
+            if isinstance(token_or_manifest, dict)
+            else str(token_or_manifest).encode()
+        )
+        signature = signature_or_key
+        key = public_key
+    Ed25519PublicKey.from_public_bytes(b64decode(key)).verify(
+        b64decode(signature), raw
+    )
+    return json.loads(raw)
 
 
 def effective_expires_at(license_row) -> datetime | None:

@@ -41,6 +41,7 @@ def _add_missing_license_columns() -> None:
         "first_activated_at": "TIMESTAMP",
         "activation_expires_at": "TIMESTAMP",
         "used_at": "TIMESTAMP",
+        "plan_preset_id": "INTEGER",
     }
     with engine.begin() as connection:
         for name, definition in columns.items():

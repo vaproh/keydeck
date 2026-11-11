@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Edit key …{{ license.key_last4 }}{% endblock %}
+{% block crumbs %}<span>/</span><a href="/admin/licenses">Keys</a><span>/</span><a href="/admin/licenses/{{ license.id }}">…{{ license.key_last4 }}</a><span>/</span><strong>Edit</strong>{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Edit key · {{ product.slug if product else '' }}</p>
+    <h1>Adjust the key.</h1>
+    <p class="lede">Changes apply to the server record. The raw key itself never changes.</p>
+  </div>
+  <div class="head-actions"><a class="button ghost" href="/admin/licenses/{{ license.id }}">Back to key</a></div>
+</div>
+
+<div class="panel"><div class="panel-body">
+  <form class="form" method="post" action="/admin/licenses/{{ license.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+    <div class="form-row">
+      <label class="field"><span>Plan name</span><input name="plan_name" value="{{ license.plan_name }}" maxlength="40" /></label>
+      <label class="field"><span>Plan preset</span>
+        <select name="preset_id">
+          <option value="">None</option>
+          {% for preset in presets %}<option value="{{ preset.id }}" {{ 'selected' if license.plan_preset_id == preset.id else '' }}>{{ preset.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field"><span>Key type</span><input value="{{ license.key_type }}" disabled /></label>
+      <label class="field"><span>Max activations</span><input name="max_activations" type="number" value="{{ license.max_activations }}" min="1" max="1000" /></label>
+    </div>
+    <div class="form-row">
+      {% if license.key_type == 'trial' %}
+      <label class="field"><span>Trial minutes</span><input name="trial_minutes" type="number" value="{{ license.trial_minutes or 15 }}" min="1" /></label>
+      {% elif license.key_type == 'timed' %}
+      <label class="field"><span>Validity days</span><input name="validity_days" type="number" value="{{ license.validity_days or 30 }}" min="1" /></label>
+      <label class="field"><span>Expires at</span><input name="expires_at" type="datetime-local" value="{{ license.expires_at.strftime('%Y-%m-%dT%H:%M') }}" /></label>
+      {% endif %}
+      <label class="field"><span>Grace seconds</span><input name="grace_seconds" type="number" value="{{ license.grace_seconds }}" min="0" /></label>
+    </div>
+    <div class="form-row">
+      <label class="field"><span>Limits JSON</span><input name="limits" value="{{ license.limits_json }}" /></label>
+      <label class="field"><span>Features JSON</span><input name="features" value="{{ license.features_json }}" /></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea name="notes">{{ license.notes }}</textarea></label>
+    <div class="form-actions"><button type="submit">Save changes</button><a class="button ghost" href="/admin/licenses/{{ license.id }}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

@@ -1,18 +1,88 @@
 {% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block crumbs %}<span>/</span><strong>Overview</strong>{% endblock %}
 {% block body %}
-<h1>Dashboard</h1>
-<div class="cards">
-  <div class="card"><span>Products</span><strong>{{ stats.products }}</strong></div>
-  <div class="card"><span>Keys</span><strong>{{ stats.licenses }}</strong></div>
-  <div class="card"><span>Active</span><strong class="ok">{{ stats.active }}</strong></div>
-  <div class="card"><span>Activations</span><strong>{{ stats.activations }}</strong></div>
-  <div class="card"><span>Expiring 30d</span><strong class="bad">{{ stats.expiring }}</strong></div>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Operator overview · {{ now.strftime('%d %b %Y') }}</p>
+    <h1>Everything under key.</h1>
+    <p class="lede">Live counts across every product, the keys closest to expiry, and the last things that changed.</p>
+  </div>
+  <div class="head-actions">
+    <a class="button ghost" href="/admin/licenses">All keys</a>
+    <a class="button" href="/admin/products">New product</a>
+  </div>
 </div>
-<h2>Recent activity</h2>
-<table>
-  <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th></tr>
-  {% for event in recent %}
-  <tr><td class="muted">{{ event.created_at }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td><td class="muted">{{ event.target }}</td></tr>
-  {% else %}<tr><td colspan="4" class="muted">No activity yet.</td></tr>{% endfor %}
-</table>
+
+{% include "_stats.html" %}
+
+<div class="grid-2 section">
+  <section>
+    <div class="section-head">
+      <h2>Expiry ledger</h2>
+      <a class="tiny" href="/admin/licenses">Manage keys →</a>
+    </div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Product</th><th>Plan</th><th>Type</th><th>Expires</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for row, expires in expiring %}
+            <tr>
+              <td><a class="key-id" href="/admin/licenses/{{ row.id }}">…{{ row.key_last4 }}</a></td>
+              <td>{{ product_map[row.product_id].slug if row.product_id in product_map else '—' }}</td>
+              <td>{{ row.plan_name }}</td>
+              <td><span class="stamp mute">{{ row.key_type }}</span></td>
+              <td class="mono">{{ expires.strftime('%d %b %H:%M') }}</td>
+              <td><span class="stamp warn">{{ 'expired' if expires <= now else 'soon' }}</span></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty"><strong>Nothing near expiry.</strong>Keys issued with a clock will appear here 30 days before they run out.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-head section"><h2>Product ledger</h2><a class="tiny" href="/admin/products">All products →</a></div>
+    <div class="product-grid">
+      {% for item in products %}
+      <a class="product-card" href="/admin/products/{{ item.row.id }}">
+        <span class="slug">{{ item.row.slug }}</span>
+        <h3>{{ item.row.name }}</h3>
+        <div class="meta">
+          <span class="stamp {{ 'ok' if item.row.status == 'active' else 'bad' }}">{{ item.row.status }}</span>
+          <span class="stamp mute">{{ item.keys }} keys</span>
+        </div>
+        <div class="counts"><span><b>{{ item.active }}</b> active</span><span><b>{{ item.activations }}</b> activations</span></div>
+      </a>
+      {% else %}
+      <div class="panel"><div class="empty"><strong>No products yet.</strong>Create your first product to start issuing keys.</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside>
+    <div class="section-head"><h2>Recent movement</h2><a class="tiny" href="/admin/audit">Audit →</a></div>
+    <div class="panel">
+      <div class="panel-body" style="padding: 4px 16px">
+        {% for event in recent %}
+        <div style="padding: 11px 0; border-bottom: 1px solid var(--line)">
+          <div class="mono" style="font-size: 10px; color: var(--muted);">{{ event.created_at.strftime('%d %b · %H:%M') }} · {{ event.actor }}</div>
+          <div style="margin-top: 3px;">{{ event.action }}</div>
+          <div class="mono" style="font-size: 10px; color: var(--muted); overflow-wrap: anywhere;">{{ event.target }}</div>
+        </div>
+        {% else %}
+        <div class="empty"><strong>Quiet desk.</strong>Product, key and release changes land here.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="section-head section"><h2>Operator note</h2></div>
+    <div class="panel"><div class="panel-body">
+      <p class="hint" style="margin: 0 0 10px">Every key is scoped to one product. Trials start on activation. Lifetime keys never expire but still heartbeat.</p>
+      <a class="button ghost" href="/admin/releases">Open releases</a>
+    </div></div>
+  </aside>
+</div>
 {% endblock %}

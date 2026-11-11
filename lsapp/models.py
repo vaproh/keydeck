@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -40,11 +40,56 @@ class ProductKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class ProductLimit(Base):
+    __tablename__ = "product_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    limit_key: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(80))
+    value_type: Mapped[str] = mapped_column(String(12), default="integer")
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class ProductFeature(Base):
+    __tablename__ = "product_features"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    feature_key: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class PlanPreset(Base):
+    __tablename__ = "plan_presets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    key_type: Mapped[str] = mapped_column(String(16), default="timed")
+    trial_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validity_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    starts_on_activation: Mapped[bool] = mapped_column(default=True)
+    one_time_activation: Mapped[bool] = mapped_column(default=False)
+    grace_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    max_activations: Mapped[int] = mapped_column(Integer, default=1)
+    limits_json: Mapped[str] = mapped_column(Text, default="{}")
+    features_json: Mapped[str] = mapped_column(Text, default="[]")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class License(Base):
     __tablename__ = "licenses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    plan_preset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("plan_presets.id"), nullable=True
+    )
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     key_last4: Mapped[str] = mapped_column(String(8))
     plan_name: Mapped[str] = mapped_column(String(40), default="standard")
@@ -65,7 +110,7 @@ class License(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
-    activations: Mapped[list["Activation"]] = relationship(back_populates="license")
+    activations: Mapped[list[Activation]] = relationship(back_populates="license")
 
 
 class Activation(Base):

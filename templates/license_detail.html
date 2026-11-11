@@ -1,45 +1,93 @@
 {% extends "base.html" %}
+{% block title %}Key …{{ license.key_last4 }}{% endblock %}
+{% block crumbs %}<span>/</span><a href="/admin/licenses">Keys</a><span>/</span><strong>…{{ license.key_last4 }}</strong>{% endblock %}
 {% block body %}
-<h1>Key #{{ license.id }} · …{{ license.key_last4 }}</h1>
-<div class="cards">
-  <div class="card"><span>Product</span><strong>{{ product.slug if product else '—' }}</strong></div>
-  <div class="card"><span>Plan</span><strong>{{ license.plan_name }}</strong></div>
-  <div class="card"><span>Status</span><strong class="{{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</strong></div>
-  <div class="card"><span>Type</span><strong>{{ license.key_type }}</strong></div>
-  <div class="card"><span>Expires</span><strong>{% if license.key_type == 'lifetime' %}Never{% elif license.activation_expires_at %}{{ license.activation_expires_at.date() }}{% elif license.starts_on_activation %}On activation{% else %}{{ license.expires_at.date() }}{% endif %}</strong></div>
-  <div class="card"><span>First activated</span><strong>{{ license.first_activated_at or '—' }}</strong></div>
-  <div class="card"><span>Activation expires</span><strong>{{ license.activation_expires_at or '—' }}</strong></div>
-  <div class="card"><span>Used at</span><strong>{{ license.used_at or '—' }}</strong></div>
-  <div class="card"><span>Grace</span><strong>{{ license.grace_seconds }}s</strong></div>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ product.slug if product else 'unknown product' }} · key #{{ license.id }}</p>
+    <h1>…{{ license.key_last4 }}</h1>
+    <div class="key-meta">
+      <span class="stamp mute">{{ license.key_type }}</span>
+      <span class="stamp {{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</span>
+      <span class="stamp mute">{{ license.plan_name }}</span>
+    </div>
+  </div>
+  <div class="head-actions">
+    <a class="button ghost" href="/admin/licenses/{{ license.id }}/edit">Edit key</a>
+    <a class="button ghost" href="/admin/licenses?product_id={{ license.product_id }}">Product keys</a>
+  </div>
 </div>
-<h2>Limits and features</h2>
-<p class="muted">limits {{ license.limits_json }}</p>
-<p class="muted">features {{ license.features_json }}</p>
-<h2>Actions</h2>
-<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/extend">
-  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
-  <label>Extend days<input name="days" type="number" value="30" min="1" /></label>
-  <button type="submit" class="ghost">Extend</button>
-</form>
-<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/reset">
-  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
-  <button type="submit" class="ghost">Reset activations</button>
-</form>
-<form class="inline" method="post" action="/admin/licenses/{{ license.id }}/revoke">
-  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
-  <button type="submit">Revoke</button>
-</form>
-<h2>Activations</h2>
-<table>
-  <tr><th>Installation</th><th>Version</th><th>Last seen</th><th>Revoked</th></tr>
-  {% for activation in license.activations %}
-  <tr><td class="muted">{{ activation.installation_hash[:12] }}…</td><td>{{ activation.app_version }}</td><td>{{ activation.last_seen_at }}</td><td>{{ activation.revoked_at or '—' }}</td></tr>
-  {% else %}<tr><td colspan="4" class="muted">Never activated.</td></tr>{% endfor %}
-</table>
-<h2>Audit</h2>
-<table>
-  <tr><th>When</th><th>Actor</th><th>Action</th></tr>
-  {% for event in events %}<tr><td class="muted">{{ event.created_at }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td></tr>
-  {% else %}<tr><td colspan="3" class="muted">No events.</td></tr>{% endfor %}
-</table>
+
+<div class="key-card">
+  <div class="key-facts" style="margin-top: 0">
+    <div class="key-fact"><label>Plan</label><strong>{{ license.plan_name }}</strong></div>
+    <div class="key-fact"><label>Expires</label><strong>{% if license.key_type == 'lifetime' %}Never{% elif license.activation_expires_at %}{{ license.activation_expires_at.strftime('%d %b %Y · %H:%M') }}{% elif license.starts_on_activation %}On activation{% else %}{{ license.expires_at.strftime('%d %b %Y · %H:%M') }}{% endif %}</strong></div>
+    <div class="key-fact"><label>First activated</label><strong>{{ license.first_activated_at or '—' }}</strong></div>
+    <div class="key-fact"><label>Activations</label><strong>{{ license.activations|length }}/{{ license.max_activations }}</strong></div>
+    <div class="key-fact"><label>Grace</label><strong>{{ license.grace_seconds }}s</strong></div>
+    <div class="key-fact"><label>Used at</label><strong>{{ license.used_at or '—' }}</strong></div>
+  </div>
+  <div class="grid-2" style="margin-top: 24px; gap: 20px">
+    <div>
+      <h2>Limits and features</h2>
+      <dl class="definition-list">
+        <div class="definition"><dt>Limits</dt><dd class="code">{{ license.limits_json }}</dd></div>
+        <div class="definition"><dt>Features</dt><dd class="code">{{ license.features_json }}</dd></div>
+        <div class="definition"><dt>Notes</dt><dd>{{ license.notes or '—' }}</dd></div>
+      </dl>
+    </div>
+    <div>
+      <h2>Actions</h2>
+      <div class="form">
+        <form class="form" method="post" action="/admin/licenses/{{ license.id }}/extend">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <label class="field"><span>Extend by days</span><input name="days" type="number" value="30" min="1" max="3650" /></label>
+          <button class="ghost" type="submit">Extend key</button>
+        </form>
+        <form method="post" action="/admin/licenses/{{ license.id }}/reset">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <button class="ghost" type="submit">Reset activations</button>
+        </form>
+        <form method="post" action="/admin/licenses/{{ license.id }}/revoke">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+          <button class="danger" type="submit">Revoke key</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="section">
+  <div class="section-head"><h2>Installations</h2><span class="tiny">{{ license.activations|length }} bound</span></div>
+  <div class="panel"><div class="table-wrap">
+    <table>
+      <thead><tr><th>Installation</th><th>Version</th><th>Last seen</th><th>IP</th><th>State</th></tr></thead>
+      <tbody>
+      {% for activation in license.activations %}
+      <tr>
+        <td class="key-id">{{ activation.installation_hash[:16] }}…</td>
+        <td>{{ activation.app_version or '—' }}</td>
+        <td class="mono">{{ activation.last_seen_at.strftime('%d %b %Y · %H:%M') }}</td>
+        <td class="mono">{{ activation.ip or '—' }}</td>
+        <td><span class="stamp {{ 'bad' if activation.revoked_at else 'ok' }}">{{ 'revoked' if activation.revoked_at else 'active' }}</span></td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="empty"><strong>Never activated.</strong>The key is waiting for its first client heartbeat.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Audit trail</h2></div>
+  <div class="panel"><div class="table-wrap">
+    <table>
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+      <tbody>
+      {% for event in events %}
+      <tr><td class="mono">{{ event.created_at.strftime('%d %b %Y · %H:%M') }}</td><td>{{ event.actor }}</td><td>{{ event.action }}</td><td class="mono">{{ event.target }}</td></tr>
+      {% else %}<tr><td colspan="4" class="empty">No events for this key.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+</section>
 {% endblock %}

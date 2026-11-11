@@ -4,14 +4,14 @@ import base64
 import os
 import re
 import sys
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "license-server"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 HASH = "a" * 64
 TOTP_SECRET = "JBSWY3DPEHPK3PXP"
@@ -83,14 +83,25 @@ def _csrf(html: str) -> str:
     return match.group(1)
 
 
+def captcha(admin):
+    page = admin.get("/admin/login")
+    token = re.search(r'name="captcha_token" value="([^"]+)"', page.text).group(1)
+    left, right = re.search(r"(\d+)\s*\+\s*(\d+)\s*=", page.text).groups()
+    return {"captcha_token": token, "captcha_answer": str(int(left) + int(right))}
+
+
 def login(admin):
-    from argon2 import PasswordHasher
     import pyotp
+    from argon2 import PasswordHasher
 
     os.environ["LICENSE_ADMIN_PASSWORD_HASH"] = PasswordHasher().hash(PASSWORD)
     response = admin.post(
         "/admin/login",
-        data={"password": PASSWORD, "totp": pyotp.TOTP(TOTP_SECRET).now()},
+        data={
+            **captcha(admin),
+            "password": PASSWORD,
+            "totp": pyotp.TOTP(TOTP_SECRET).now(),
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -160,16 +171,37 @@ def test_login_rejects_wrong_password_and_totp(admin_app):
     os.environ["LICENSE_ADMIN_PASSWORD_HASH"] = PasswordHasher().hash(PASSWORD)
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     bad_password = admin.post(
-        "/admin/login", data={"password": "nope", "totp": "123456"}, follow_redirects=False
+        "/admin/login",
+        data={**captcha(admin), "password": "nope", "totp": "123456"},
+        follow_redirects=False,
     )
     assert bad_password.status_code == 401
 
     bad_totp = admin.post(
         "/admin/login",
-        data={"password": PASSWORD, "totp": "000000"},
+        data={**captcha(admin), "password": PASSWORD, "totp": "000000"},
         follow_redirects=False,
     )
     assert bad_totp.status_code == 401
+
+
+def test_login_requires_a_captcha(admin_app):
+    import pyotp
+    from argon2 import PasswordHasher
+
+    os.environ["LICENSE_ADMIN_PASSWORD_HASH"] = PasswordHasher().hash(PASSWORD)
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    response = admin.post(
+        "/admin/login",
+        data={
+            "password": PASSWORD,
+            "totp": pyotp.TOTP(TOTP_SECRET).now(),
+            "captcha_token": "missing",
+            "captcha_answer": "0",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 401
 
 
 def test_login_is_rate_limited(admin_app):
@@ -178,9 +210,15 @@ def test_login_is_rate_limited(admin_app):
     os.environ["LICENSE_ADMIN_PASSWORD_HASH"] = PasswordHasher().hash(PASSWORD)
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     for _ in range(5):
-        admin.post("/admin/login", data={"password": "x", "totp": "1"}, follow_redirects=False)
+        admin.post(
+            "/admin/login",
+            data={**captcha(admin), "password": "x", "totp": "1"},
+            follow_redirects=False,
+        )
     blocked = admin.post(
-        "/admin/login", data={"password": "x", "totp": "1"}, follow_redirects=False
+        "/admin/login",
+        data={**captcha(admin), "password": "x", "totp": "1"},
+        follow_redirects=False,
     )
     assert blocked.status_code == 429
 
@@ -256,6 +294,88 @@ def test_per_product_signing_keys_are_used(admin_app):
         )
     finally:
         db.close()
+
+
+def test_dashboard_and_product_detail_render(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    dashboard = admin.get("/admin")
+    assert dashboard.status_code == 200
+    assert "Everything under key" in dashboard.text
+    assert "Expiry ledger" in dashboard.text
+    detail = admin.get(f"/admin/products/{product_id}")
+    assert detail.status_code == 200
+    assert "Plan presets" in detail.text
+    assert "Limits" in detail.text
+    assert "Features" in detail.text
+    assert admin.get("/admin/partials/stats").status_code == 200
+
+
+def test_preset_feeds_key_issue_and_key_edit(admin_app):
+    from lsapp.db import SessionLocal
+    from lsapp.models import License, PlanPreset
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    form = {
+        "csrf_token": csrf,
+        "name": "Trial preset",
+        "key_type": "trial",
+        "trial_minutes": "15",
+        "validity_days": "30",
+        "max_activations": "1",
+        "grace_seconds": "0",
+        "limits": '{"max_accounts": 7}',
+        "features": '["warmup"]',
+        "starts_on_activation": "1",
+        "one_time_activation": "1",
+    }
+    assert (
+        admin.post(
+            f"/admin/products/{product_id}/presets",
+            data=form,
+            follow_redirects=False,
+        ).status_code
+        == 303
+    )
+    db = SessionLocal()
+    try:
+        preset = db.query(PlanPreset).order_by(PlanPreset.id.desc()).first()
+        preset_id = preset.id
+    finally:
+        db.close()
+    make_license(admin, csrf, product_id, preset_id=str(preset_id))
+    db = SessionLocal()
+    try:
+        row = db.query(License).filter(License.key_hash != "").order_by(License.id.desc()).first()
+        assert row.plan_preset_id == preset_id
+        assert row.plan_name == "Trial preset"
+        assert row.trial_minutes == 15
+        license_id = row.id
+    finally:
+        db.close()
+    edit = admin.get(f"/admin/licenses/{license_id}/edit")
+    assert edit.status_code == 200
+    assert "Adjust the key" in edit.text
+    assert (
+        admin.post(
+            f"/admin/licenses/{license_id}/edit",
+            data={
+                "csrf_token": csrf,
+                "plan_name": "Trial edited",
+                "max_activations": "2",
+                "grace_seconds": "0",
+                "trial_minutes": "20",
+                "limits": '{"max_accounts": 9}',
+                "features": '["warmup"]',
+                "notes": "edited",
+            },
+            follow_redirects=False,
+        ).status_code
+        == 303
+    )
 
 
 def test_license_form_defaults_to_max_accounts(admin_app):
@@ -596,8 +716,7 @@ def test_disabled_product_cannot_activate(admin_app, public):
 def test_service_token_publishes_releases_only(admin_app, public):
     import hashlib
 
-    from lsapp.crypto import product_signing_key, public_key_of
-    from app.modules.ota import verify_manifest
+    from lsapp.crypto import product_signing_key, public_key_of, verify_manifest
 
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     csrf = login(admin)
@@ -664,8 +783,8 @@ def _activate(public, key, product="reorchestra", installation=HASH):
 
 
 def test_activation_is_product_scoped(admin_app):
-    from lsapp.crypto import product_signing_key, verify_lease, public_key_of
     from lsapp.api_public import app as public_app
+    from lsapp.crypto import product_signing_key, public_key_of, verify_lease
 
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     csrf = login(admin)
@@ -729,8 +848,7 @@ def _upload(public_base, slug="reorchestra", version="1.2.0", channel="stable", 
 def test_release_upload_signs_a_canonical_manifest(admin_app):
     import json
 
-    from lsapp.crypto import public_key_of, product_signing_key
-    from app.modules.ota import verify_manifest
+    from lsapp.crypto import product_signing_key, public_key_of, verify_manifest
 
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     csrf = login(admin)
@@ -880,6 +998,7 @@ def test_download_path_is_shared_between_services(public, admin_app):
 
 def test_production_requires_an_absolute_public_url(monkeypatch):
     import pytest as _pytest
+
     from lsapp import api_public
 
     monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)

@@ -1,55 +1,92 @@
 {% extends "base.html" %}
+{% block title %}Keys{% endblock %}
+{% block crumbs %}<span>/</span><strong>Keys</strong>{% endblock %}
 {% block body %}
-<h1>Keys</h1>
-<form class="inline" method="get" action="/admin/licenses">
-  <label>Product
-    <select name="product_id">
-      <option value="">All</option>
-      {% for product in products %}<option value="{{ product.id }}" {% if selected_product == product.id %}selected{% endif %}>{{ product.slug }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit" class="ghost">Filter</button>
-</form>
-{% if products %}
-<form class="inline" method="post" action="/admin/products/{{ products[0].id }}/licenses" id="issue">
-  <input type="hidden" name="csrf_token" value="{{ csrf }}" />
-  <label>Product
-    <select name="product_select" onchange="document.getElementById('issue').action='/admin/products/'+this.value+'/licenses'">
-      {% for product in products %}<option value="{{ product.id }}">{{ product.slug }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Plan<input name="plan_name" value="standard" maxlength="40" /></label>
-  <label>Key type
-    <select name="key_type">
-      <option value="trial">Trial</option>
-      <option value="timed" selected>Timed</option>
-      <option value="lifetime">Lifetime</option>
-    </select>
-  </label>
-  <label>Trial minutes<input name="trial_minutes" type="number" value="15" min="1" max="525600" /></label>
-  <label>Validity days<input name="days" type="number" value="365" min="1" max="3650" /></label>
-  <label><span>Starts on activation</span><input name="starts_on_activation" type="checkbox" value="1" /></label>
-  <label><span>One-time activation</span><input name="one_time_activation" type="checkbox" value="1" /></label>
-  <label>Grace seconds<input name="grace_seconds" type="number" value="86400" min="0" max="31536000" /></label>
-  <label>Max activations<input name="max_activations" type="number" value="1" min="1" max="1000" /></label>
-  <label>Limits JSON<input name="limits" value='{"max_accounts": 100}' /></label>
-  <label>Features JSON<input name="features" value='["warmup","campaigns"]' /></label>
-  <label>Notes<input name="notes" /></label>
-  <button type="submit">Issue key</button>
-</form>
-{% endif %}
-<table>
-  <tr><th>ID</th><th>Plan</th><th>Last 4</th><th>Expires</th><th>Activations</th><th>Status</th><th></th></tr>
-  {% for license in licenses %}
-  <tr>
-    <td><a href="/admin/licenses/{{ license.id }}" style="color:var(--accent)">#{{ license.id }}</a></td>
-    <td>{{ license.plan_name }}</td>
-    <td class="muted">…{{ license.key_last4 }}</td>
-    <td>{% if license.key_type == 'lifetime' %}Never{% elif license.activation_expires_at %}{{ license.activation_expires_at.date() }}{% elif license.starts_on_activation %}On activation{% else %}{{ license.expires_at.date() }}{% endif %}</td>
-    <td>{{ license.activations | rejectattr('revoked_at') | list | length }} / {{ license.max_activations }}</td>
-    <td class="{{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</td>
-    <td><a href="/admin/licenses/{{ license.id }}" class="muted">Open</a></td>
-  </tr>
-  {% else %}<tr><td colspan="7" class="muted">No keys yet.</td></tr>{% endfor %}
-</table>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Key registry</p>
+    <h1>Issued keys.</h1>
+    <p class="lede">Every raw key is shown once. Store only the hash; the last four characters are for recognition.</p>
+  </div>
+  <div class="head-actions">
+    <form class="toolbar" method="get" action="/admin/licenses" style="margin:0">
+      <label class="field"><span>Product</span>
+        <select name="product_id" onchange="this.form.submit()">
+          <option value="">All products</option>
+          {% for product in products %}<option value="{{ product.id }}" {{ 'selected' if selected_product == product.id else '' }}>{{ product.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </form>
+    <a class="button ghost" href="/admin/products">Products</a>
+  </div>
+</div>
+
+<section class="panel" style="margin-bottom: 28px">
+  <div class="panel-head"><h2>Issue a key</h2><span class="tiny">Raw key appears once</span></div>
+  <div class="panel-body">
+    {% if products %}
+    <form class="form" id="issue-form" method="post" action="/admin/products/{{ selected_product or products[0].id }}/licenses" x-data='presetIssue({ presets: {{ preset_data|tojson }}, productId: "{{ selected_product or products[0].id }}" })'>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+      <div class="form-row">
+        <label class="field"><span>Product</span>
+          <select name="product_id" id="issue-product" x-model="productId" @change="syncAction()" required>
+            {% for product in products %}<option value="{{ product.id }}" {{ 'selected' if selected_product == product.id else '' }}>{{ product.name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field"><span>Plan preset</span>
+          <select name="preset_id" x-model="presetId" @change="applyPreset()">
+            <option value="">Custom / no preset</option>
+            <template x-for="preset in presetsForProduct" :key="preset.id">
+              <option :value="preset.id" x-text="preset.name + ' · ' + preset.key_type"></option>
+            </template>
+          </select>
+        </label>
+        <label class="field"><span>Plan name</span><input name="plan_name" x-ref="planName" value="standard" maxlength="40" /></label>
+        <label class="field"><span>Key type</span><select name="key_type" x-ref="keyType"><option value="timed">Timed</option><option value="trial">Trial</option><option value="lifetime">Lifetime</option></select></label>
+      </div>
+      <div class="form-row">
+        <label class="field"><span>Validity days</span><input name="days" x-ref="days" type="number" value="30" min="1" max="3650" /></label>
+        <label class="field"><span>Trial minutes</span><input name="trial_minutes" x-ref="trialMinutes" type="number" value="15" min="1" max="525600" /></label>
+        <label class="field"><span>Max activations</span><input name="max_activations" x-ref="maxActivations" type="number" value="1" min="1" max="1000" /></label>
+        <label class="field"><span>Grace seconds</span><input name="grace_seconds" x-ref="graceSeconds" type="number" value="0" min="0" max="31536000" /></label>
+      </div>
+      <div class="form-row">
+        <label class="check"><input name="starts_on_activation" x-ref="starts" type="checkbox" value="1" checked /> Starts on activation</label>
+        <label class="check"><input name="one_time_activation" x-ref="oneTime" type="checkbox" value="1" /> One-time activation</label>
+      </div>
+      <div class="form-row">
+        <label class="field"><span>Limits JSON</span><input name="limits" x-ref="limits" value='{"max_accounts": 100}' /></label>
+        <label class="field"><span>Features JSON</span><input name="features" x-ref="features" value='["warmup"]' /></label>
+        <label class="field"><span>Notes</span><input name="notes" placeholder="Who is this for?" /></label>
+      </div>
+      <div class="form-actions"><button type="submit">Issue key</button><span class="hint" x-show="presetId">Preset selected — fields are filled, server uses the preset.</span></div>
+    </form>
+    {% else %}
+    <div class="empty"><strong>No products yet.</strong>Create a product before issuing keys.</div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Key</th><th>Product</th><th>Plan</th><th>Type</th><th>Expires</th><th>Activations</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for row in licenses %}
+      <tr>
+        <td><a class="key-id" href="/admin/licenses/{{ row.id }}">…{{ row.key_last4 }}</a></td>
+        <td class="mono">{{ product_map[row.product_id].slug if row.product_id in product_map else row.product_id }}</td>
+        <td>{{ row.plan_name }}</td>
+        <td><span class="stamp mute">{{ row.key_type }}</span></td>
+        <td class="mono">{% if row.key_type == 'lifetime' %}Never{% elif row.activation_expires_at %}{{ row.activation_expires_at.strftime('%d %b %Y') }}{% elif row.starts_on_activation %}On activation{% else %}{{ row.expires_at.strftime('%d %b %Y') }}{% endif %}</td>
+        <td class="mono">{{ row.activations|length }}/{{ row.max_activations }}</td>
+        <td><span class="stamp {{ 'ok' if row.status == 'active' else 'bad' }}">{{ row.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty"><strong>No keys yet.</strong>Issue one above. The raw key is shown once.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

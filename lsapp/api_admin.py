@@ -7,13 +7,15 @@ that is accepted only for release publishing.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
+import re
 import secrets
+import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, UTC
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from argon2 import PasswordHasher
@@ -30,11 +32,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from .crypto import (
+    effective_expires_at,
     new_key,
     product_signing_env,
     product_signing_key,
@@ -43,7 +47,17 @@ from .crypto import (
     sign_manifest,
 )
 from .db import get_db, init_db
-from .models import Activation, AuditEvent, License, Product, ProductKey, Release
+from .models import (
+    Activation,
+    AuditEvent,
+    License,
+    PlanPreset,
+    Product,
+    ProductFeature,
+    ProductKey,
+    ProductLimit,
+    Release,
+)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -53,7 +67,12 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="ReOrchestra license admin", version="1.0", lifespan=lifespan)
+app = FastAPI(title="License desk", version="1.0", lifespan=lifespan)
+app.mount(
+    "/admin/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent.parent / "static")),
+    name="admin-static",
+)
 
 
 _hasher = PasswordHasher()
@@ -78,6 +97,30 @@ class AdminSession:
 
 SESSIONS: dict[str, AdminSession] = {}
 _FAILURES: dict[str, deque] = defaultdict(deque)
+_CAPTCHAS: dict[str, tuple[str, float, str]] = {}
+CAPTCHA_TTL = 300
+
+
+def _new_captcha() -> tuple[str, str]:
+    """Return a short-lived, single-use human-check question and token."""
+    now = time.time()
+    for token, (_, expires, _) in list(_CAPTCHAS.items()):
+        if expires < now:
+            _CAPTCHAS.pop(token, None)
+    left = secrets.randbelow(8) + 2
+    right = secrets.randbelow(8) + 2
+    question = f"{left} + {right}"
+    token = secrets.token_urlsafe(18)
+    _CAPTCHAS[token] = (str(left + right), now + CAPTCHA_TTL, question)
+    return token, question
+
+
+def _check_captcha(token: str, answer: str) -> bool:
+    record = _CAPTCHAS.pop(token, None)
+    if not record:
+        return False
+    expected, expires, _ = record
+    return expires >= time.time() and secrets.compare_digest(answer.strip(), expected)
 
 
 def _client_ip(request: Request) -> str:
@@ -179,21 +222,47 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 @app.get("/admin/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return TEMPLATES.TemplateResponse(request, "login.html", {"error": ""})
+    token, question = _new_captcha()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "login.html",
+        {"error": "", "captcha_token": token, "captcha_question": question},
+    )
+
+
+@app.get("/admin/login/captcha", response_class=HTMLResponse)
+def login_captcha(request: Request):
+    token, question = _new_captcha()
+    return TEMPLATES.TemplateResponse(
+        request,
+        "_captcha.html",
+        {"captcha_token": token, "captcha_question": question},
+    )
 
 
 @app.post("/admin/login")
 async def login_submit(request: Request):
     form = dict(await request.form())
     ip = _client_ip(request)
+    token, question = _new_captcha()
+    context = {
+        "error": "",
+        "captcha_token": token,
+        "captcha_question": question,
+    }
     if _login_blocked(ip):
         return TEMPLATES.TemplateResponse(
-            request, "login.html", {"error": "Too many attempts. Wait and try again."}, status_code=429
+            request, "login.html", {**context, "error": "Too many attempts. Wait and try again."}, status_code=429
+        )
+    if not _check_captcha(form.get("captcha_token", ""), form.get("captcha_answer", "")):
+        _record_failure(ip)
+        return TEMPLATES.TemplateResponse(
+            request, "login.html", {**context, "error": "Human check failed. Try the new question."}, status_code=401
         )
     if not _verify_credentials(form.get("password", ""), form.get("totp", "")):
         _record_failure(ip)
         return TEMPLATES.TemplateResponse(
-            request, "login.html", {"error": "Invalid credentials."}, status_code=401
+            request, "login.html", {**context, "error": "Invalid credentials."}, status_code=401
         )
     _FAILURES.pop(ip, None)
     token = secrets.token_urlsafe(32)
@@ -221,25 +290,109 @@ def _render(request: Request, name: str, **context):
     )
 
 
+def _stats_context(db: DbSession) -> dict:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    active_rows = (
+        db.query(License)
+        .filter(License.status == "active")
+        .order_by(License.id.desc())
+        .all()
+    )
+    expiring = []
+    for row in active_rows:
+        expires = effective_expires_at(row)
+        if expires is not None and expires <= now + timedelta(days=30):
+            expiring.append((row, expires))
+    expiring.sort(key=lambda item: item[1])
+    return {
+        "now": now,
+        "expiring": expiring,
+        "stats": {
+            "products": db.query(Product).count(),
+            "licenses": db.query(License).count(),
+            "active": len(active_rows),
+            "activations": db.query(Activation)
+            .filter(Activation.revoked_at.is_(None))
+            .count(),
+            "expiring": len(expiring),
+            "expiring_7": sum(
+                1 for _, expires in expiring if expires <= now + timedelta(days=7)
+            ),
+            "lifetime": sum(1 for row in active_rows if row.key_type == "lifetime"),
+        },
+    }
+
+
+@app.get("/admin/partials/stats", response_class=HTMLResponse)
+def stats_partial(request: Request, db: DbSession = Depends(get_db)):
+    _require_session(request)
+    context = _stats_context(db)
+    return TEMPLATES.TemplateResponse(request, "_stats.html", context)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def dashboard(request: Request, db: DbSession = Depends(get_db)):
-    soon = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=30)
-    stats = {
-        "products": db.query(Product).count(),
-        "licenses": db.query(License).count(),
-        "active": db.query(License).filter(License.status == "active").count(),
-        "activations": db.query(Activation).filter(Activation.revoked_at.is_(None)).count(),
-        "expiring": db.query(License)
-        .filter(License.status == "active", License.expires_at <= soon)
-        .count(),
-    }
-    recent = db.query(AuditEvent).order_by(AuditEvent.id.desc()).limit(10).all()
-    return _render(request, "dashboard.html", stats=stats, recent=recent)
+    context = _stats_context(db)
+    now = context["now"]
+    expiring = context["expiring"]
+    stats = context["stats"]
+    products = []
+    for product in db.query(Product).order_by(Product.slug).all():
+        products.append(
+            {
+                "row": product,
+                "keys": db.query(License)
+                .filter(License.product_id == product.id)
+                .count(),
+                "active": db.query(License)
+                .filter(
+                    License.product_id == product.id,
+                    License.status == "active",
+                )
+                .count(),
+                "activations": db.query(Activation)
+                .join(License, Activation.license_id == License.id)
+                .filter(
+                    License.product_id == product.id,
+                    Activation.revoked_at.is_(None),
+                )
+                .count(),
+            }
+        )
+    recent = db.query(AuditEvent).order_by(AuditEvent.id.desc()).limit(8).all()
+    product_map = {product.id: product for product in db.query(Product).all()}
+    return _render(
+        request,
+        "dashboard.html",
+        stats=stats,
+        expiring=expiring[:8],
+        products=products,
+        recent=recent,
+        product_map=product_map,
+        now=now,
+    )
 
 
 @app.get("/admin/products", response_class=HTMLResponse)
 def products_page(request: Request, db: DbSession = Depends(get_db)):
-    return _render(request, "products.html", products=db.query(Product).order_by(Product.slug).all())
+    products = []
+    for product in db.query(Product).order_by(Product.slug).all():
+        products.append(
+            {
+                "row": product,
+                "keys": db.query(License).filter(License.product_id == product.id).count(),
+                "active": db.query(License)
+                .filter(
+                    License.product_id == product.id,
+                    License.status == "active",
+                )
+                .count(),
+                "presets": db.query(PlanPreset)
+                .filter(PlanPreset.product_id == product.id)
+                .count(),
+            }
+        )
+    return _render(request, "products.html", products=products)
 
 
 @app.post("/admin/products")
@@ -289,6 +442,260 @@ async def product_keys(request: Request, product_id: int, db: DbSession = Depend
     return RedirectResponse("/admin/products", status_code=303)
 
 
+@app.get("/admin/products/{product_id}", response_class=HTMLResponse)
+def product_detail(
+    request: Request, product_id: int, db: DbSession = Depends(get_db)
+):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    return _render(
+        request,
+        "product_detail.html",
+        product=product,
+        signing=db.query(ProductKey)
+        .filter(ProductKey.product_id == product.id)
+        .first(),
+        limits=db.query(ProductLimit)
+        .filter(ProductLimit.product_id == product.id)
+        .order_by(ProductLimit.limit_key)
+        .all(),
+        features=db.query(ProductFeature)
+        .filter(ProductFeature.product_id == product.id)
+        .order_by(ProductFeature.feature_key)
+        .all(),
+        presets=db.query(PlanPreset)
+        .filter(PlanPreset.product_id == product.id)
+        .order_by(PlanPreset.name)
+        .all(),
+        keys=db.query(License)
+        .filter(License.product_id == product.id)
+        .order_by(License.id.desc())
+        .limit(12)
+        .all(),
+    )
+
+
+@app.post("/admin/products/{product_id}/status")
+async def product_status(
+    request: Request, product_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    product.status = "disabled" if product.status == "active" else "active"
+    db.commit()
+    _audit(db, f"product.{product.status}", product.slug, product.id)
+    return RedirectResponse(f"/admin/products/{product.id}", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/limits")
+async def product_limit_create(
+    request: Request, product_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    key = form.get("limit_key", "").strip().lower().replace(" ", "_")
+    label = form.get("label", "").strip() or key
+    value_type = form.get("value_type", "integer")
+    if not key:
+        raise HTTPException(status_code=400, detail="limit key is required")
+    if value_type not in {"integer", "boolean", "string"}:
+        raise HTTPException(status_code=400, detail="invalid limit type")
+    existing = (
+        db.query(ProductLimit)
+        .filter(ProductLimit.product_id == product.id, ProductLimit.limit_key == key)
+        .first()
+    )
+    if existing:
+        existing.label = label[:80]
+        existing.value_type = value_type
+        existing.description = form.get("description", "")[:500]
+    else:
+        db.add(
+            ProductLimit(
+                product_id=product.id,
+                limit_key=key[:40],
+                label=label[:80],
+                value_type=value_type,
+                description=form.get("description", "")[:500],
+            )
+        )
+    db.commit()
+    _audit(db, "product.limit", key, product.id)
+    return RedirectResponse(f"/admin/products/{product.id}#limits", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/features")
+async def product_feature_create(
+    request: Request, product_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    key = form.get("feature_key", "").strip().lower().replace(" ", "_")
+    label = form.get("label", "").strip() or key
+    if not key:
+        raise HTTPException(status_code=400, detail="feature key is required")
+    existing = (
+        db.query(ProductFeature)
+        .filter(
+            ProductFeature.product_id == product.id,
+            ProductFeature.feature_key == key,
+        )
+        .first()
+    )
+    if existing:
+        existing.label = label[:80]
+        existing.description = form.get("description", "")[:500]
+    else:
+        db.add(
+            ProductFeature(
+                product_id=product.id,
+                feature_key=key[:40],
+                label=label[:80],
+                description=form.get("description", "")[:500],
+            )
+        )
+    db.commit()
+    _audit(db, "product.feature", key, product.id)
+    return RedirectResponse(f"/admin/products/{product.id}#features", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/presets")
+async def product_preset_create(
+    request: Request, product_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    name = form.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="preset name is required")
+    key_type = form.get("key_type", "timed")
+    if key_type not in {"trial", "timed", "lifetime"}:
+        raise HTTPException(status_code=400, detail="invalid key type")
+    try:
+        limits = json.loads(form.get("limits") or "{}")
+        features = json.loads(form.get("features") or "[]")
+        days = int(form.get("validity_days") or 30)
+        trial_minutes = int(form.get("trial_minutes") or 15)
+        max_activations = int(form.get("max_activations") or 1)
+        grace_seconds = int(form.get("grace_seconds") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid preset values")
+    if not isinstance(limits, dict) or not isinstance(features, list):
+        raise HTTPException(status_code=400, detail="invalid preset JSON")
+    if key_type == "lifetime":
+        days = None
+        trial_minutes = None
+        starts = False
+        one_time = False
+    elif key_type == "trial":
+        days = None
+        starts = True
+        one_time = True
+        max_activations = 1
+        grace_seconds = 0
+    else:
+        starts = form.get("starts_on_activation") in {"1", "on", "true", "yes"}
+        one_time = form.get("one_time_activation") in {"1", "on", "true", "yes"}
+    db.add(
+        PlanPreset(
+            product_id=product.id,
+            name=name[:40],
+            key_type=key_type,
+            trial_minutes=trial_minutes,
+            validity_days=days,
+            starts_on_activation=starts,
+            one_time_activation=one_time,
+            grace_seconds=grace_seconds,
+            max_activations=max_activations,
+            limits_json=json.dumps(limits, sort_keys=True),
+            features_json=json.dumps(features),
+            notes=form.get("notes", "")[:500],
+        )
+    )
+    db.commit()
+    _audit(db, "product.preset", name, product.id)
+    return RedirectResponse(f"/admin/products/{product.id}#plans", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/limits/{limit_id}/delete")
+async def product_limit_delete(
+    request: Request, product_id: int, limit_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    row = (
+        db.query(ProductLimit)
+        .filter(
+            ProductLimit.id == limit_id,
+            ProductLimit.product_id == product_id,
+        )
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+        _audit(db, "product.limit.delete", row.limit_key, product_id)
+    return RedirectResponse(f"/admin/products/{product_id}#limits", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/features/{feature_id}/delete")
+async def product_feature_delete(
+    request: Request,
+    product_id: int,
+    feature_id: int,
+    db: DbSession = Depends(get_db),
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    row = (
+        db.query(ProductFeature)
+        .filter(
+            ProductFeature.id == feature_id,
+            ProductFeature.product_id == product_id,
+        )
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+        _audit(db, "product.feature.delete", row.feature_key, product_id)
+    return RedirectResponse(f"/admin/products/{product_id}#features", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/presets/{preset_id}/delete")
+async def product_preset_delete(
+    request: Request,
+    product_id: int,
+    preset_id: int,
+    db: DbSession = Depends(get_db),
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    row = (
+        db.query(PlanPreset)
+        .filter(PlanPreset.id == preset_id, PlanPreset.product_id == product_id)
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+        _audit(db, "product.preset.delete", row.name, product_id)
+    return RedirectResponse(f"/admin/products/{product_id}#plans", status_code=303)
+
+
 @app.get("/admin/licenses", response_class=HTMLResponse)
 def licenses_page(request: Request, product_id: int | None = None, db: DbSession = Depends(get_db)):
     query = db.query(License)
@@ -299,6 +706,25 @@ def licenses_page(request: Request, product_id: int | None = None, db: DbSession
         "licenses.html",
         licenses=query.order_by(License.id.desc()).all(),
         products=db.query(Product).order_by(Product.slug).all(),
+        product_map={p.id: p for p in db.query(Product).all()},
+        presets=db.query(PlanPreset).order_by(PlanPreset.name).all(),
+        preset_data=[
+            {
+                "id": preset.id,
+                "product_id": preset.product_id,
+                "name": preset.name,
+                "key_type": preset.key_type,
+                "trial_minutes": preset.trial_minutes,
+                "validity_days": preset.validity_days,
+                "starts_on_activation": preset.starts_on_activation,
+                "one_time_activation": preset.one_time_activation,
+                "grace_seconds": preset.grace_seconds,
+                "max_activations": preset.max_activations,
+                "limits_json": preset.limits_json,
+                "features_json": preset.features_json,
+            }
+            for preset in db.query(PlanPreset).order_by(PlanPreset.name).all()
+        ],
         selected_product=product_id,
     )
 
@@ -310,6 +736,32 @@ async def license_create(request: Request, product_id: int, db: DbSession = Depe
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Unknown product")
+    preset = None
+    if form.get("preset_id"):
+        try:
+            preset_id = int(form["preset_id"])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid preset")
+        preset = (
+            db.query(PlanPreset)
+            .filter(
+                PlanPreset.id == preset_id,
+                PlanPreset.product_id == product.id,
+            )
+            .first()
+        )
+        if not preset:
+            raise HTTPException(status_code=404, detail="Unknown preset")
+        form["key_type"] = preset.key_type
+        form["trial_minutes"] = str(preset.trial_minutes or 15)
+        form["days"] = str(preset.validity_days or 365)
+        form["starts_on_activation"] = "1" if preset.starts_on_activation else ""
+        form["one_time_activation"] = "1" if preset.one_time_activation else ""
+        form["grace_seconds"] = str(preset.grace_seconds)
+        form["max_activations"] = str(preset.max_activations)
+        form["limits"] = preset.limits_json
+        form["features"] = preset.features_json
+        form["plan_name"] = preset.name
     try:
         limits = json.loads(form.get("limits") or "{}")
         features = json.loads(form.get("features") or "[]")
@@ -400,6 +852,7 @@ async def license_create(request: Request, product_id: int, db: DbSession = Depe
     plan_name = (form.get("plan_name") or "standard").strip()[:40] or "standard"
     row = License(
         product_id=product.id,
+        plan_preset_id=preset.id if preset else None,
         key_hash=sha256_hex(key),
         key_last4=key[-4:],
         plan_name=plan_name,
@@ -452,6 +905,87 @@ def license_detail(request: Request, license_id: int, db: DbSession = Depends(ge
     )
 
 
+@app.get("/admin/licenses/{license_id}/edit", response_class=HTMLResponse)
+def license_edit(
+    request: Request, license_id: int, db: DbSession = Depends(get_db)
+):
+    row = db.query(License).filter(License.id == license_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown license")
+    return _render(
+        request,
+        "license_edit.html",
+        license=row,
+        product=db.query(Product).filter(Product.id == row.product_id).first(),
+        presets=db.query(PlanPreset)
+        .filter(PlanPreset.product_id == row.product_id)
+        .order_by(PlanPreset.name)
+        .all(),
+    )
+
+
+@app.post("/admin/licenses/{license_id}/edit")
+async def license_edit_save(
+    request: Request, license_id: int, db: DbSession = Depends(get_db)
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    row = db.query(License).filter(License.id == license_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown license")
+    try:
+        limits = json.loads(form.get("limits") or "{}")
+        features = json.loads(form.get("features") or "[]")
+        max_activations = int(form.get("max_activations") or row.max_activations)
+        grace_seconds = int(form.get("grace_seconds") or row.grace_seconds)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid JSON or numbers")
+    if not isinstance(limits, dict) or not isinstance(features, list):
+        raise HTTPException(status_code=400, detail="limits/features have the wrong shape")
+    if not 1 <= max_activations <= 1000:
+        raise HTTPException(status_code=400, detail="max_activations is out of range")
+    row.plan_name = (form.get("plan_name") or row.plan_name).strip()[:40]
+    row.notes = form.get("notes", row.notes)[:1000]
+    row.limits_json = json.dumps(limits, sort_keys=True)
+    row.features_json = json.dumps(features)
+    row.max_activations = max_activations
+    row.grace_seconds = max(0, grace_seconds)
+    preset_id = form.get("preset_id")
+    if preset_id:
+        try:
+            preset = (
+                db.query(PlanPreset)
+                .filter(
+                    PlanPreset.id == int(preset_id),
+                    PlanPreset.product_id == row.product_id,
+                )
+                .first()
+            )
+        except ValueError:
+            preset = None
+        row.plan_preset_id = preset.id if preset else None
+    if row.key_type != "lifetime":
+        raw = form.get("expires_at", "").strip()
+        if raw:
+            try:
+                row.expires_at = datetime.fromisoformat(raw)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="invalid expiry")
+        if row.key_type == "trial":
+            try:
+                row.trial_minutes = int(form.get("trial_minutes") or row.trial_minutes or 15)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="invalid trial minutes")
+        elif row.key_type == "timed":
+            try:
+                row.validity_days = int(form.get("validity_days") or row.validity_days or 30)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="invalid validity days")
+    db.commit()
+    _audit(db, "license.edit", str(row.id), row.product_id)
+    return RedirectResponse(f"/admin/licenses/{row.id}", status_code=303)
+
+
 @app.post("/admin/licenses/{license_id}/{action}")
 async def license_action(request: Request, license_id: int, action: str, db: DbSession = Depends(get_db)):
     form = dict(await request.form())
@@ -501,7 +1035,61 @@ def releases_page(request: Request, db: DbSession = Depends(get_db)):
         "releases.html",
         releases=db.query(Release).order_by(Release.id.desc()).limit(50).all(),
         products=db.query(Product).order_by(Product.slug).all(),
+        product_map={p.id: p for p in db.query(Product).all()},
     )
+
+
+@app.post("/admin/releases/upload")
+async def release_upload(
+    request: Request,
+    product_id: int = Form(...),
+    version: str = Form(...),
+    channel: str = Form("stable"),
+    platform: str = Form("windows"),
+    min_version: str = Form("0.0.0"),
+    mandatory: bool = Form(False),
+    security: bool = Form(False),
+    notes: str = Form(""),
+    artifact: UploadFile = File(...),
+    db: DbSession = Depends(get_db),
+):
+    form = dict(await request.form())
+    _check_csrf(request, form)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Unknown product")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version):
+        raise HTTPException(status_code=400, detail="version must look like 1.2.3")
+    if channel not in {"stable", "beta"}:
+        raise HTTPException(status_code=400, detail="channel must be stable or beta")
+    if platform not in {"windows", "linux", "macos"}:
+        raise HTTPException(status_code=400, detail="unknown platform")
+    target = _artifact_target(product.slug, version)
+    digest = hashlib.sha256()
+    total = 0
+    with target.open("wb") as handle:
+        while chunk := await artifact.read(1024 * 256):
+            total += len(chunk)
+            if total > 600 * 1024 * 1024:
+                target.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="artifact is too large")
+            digest.update(chunk)
+            handle.write(chunk)
+    row = _publish_release(
+        db,
+        product,
+        version=version,
+        channel=channel,
+        platform=platform,
+        min_version=min_version,
+        mandatory=mandatory,
+        security=security,
+        notes=notes[:2000],
+        artifact_path=str(target),
+        sha256=digest.hexdigest(),
+        actor="operator",
+    )
+    return RedirectResponse(f"/admin/releases#release-{row.id}", status_code=303)
 
 
 @app.get("/admin/audit", response_class=HTMLResponse)

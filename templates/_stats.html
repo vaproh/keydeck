@@ -1,0 +1,7 @@
+<section class="stats" id="stats" aria-label="Key statistics" hx-get="/admin/partials/stats" hx-trigger="every 20s" hx-target="#stats" hx-select="#stats" hx-swap="outerHTML">
+  <div class="stat"><label>Products</label><strong>{{ stats.products }}</strong><small>active catalogues</small></div>
+  <div class="stat"><label>Active keys</label><strong>{{ stats.active }}</strong><small>of {{ stats.licenses }} issued</small></div>
+  <div class="stat"><label>Activations</label><strong>{{ stats.activations }}</strong><small>installation bindings</small></div>
+  <div class="stat"><label>Expiring 30d</label><strong>{{ stats.expiring }}</strong><small>{{ stats.expiring_7 }} inside 7 days</small></div>
+  <div class="stat"><label>Lifetime</label><strong>{{ stats.lifetime }}</strong><small>revocable, never expiring</small></div>
+</section>

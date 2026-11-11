@@ -1,0 +1,11 @@
+<div id="captcha-block">
+  <input type="hidden" name="captcha_token" value="{{ captcha_token }}" />
+  <label class="field">
+    <span>Human check</span>
+    <input name="captcha_answer" inputmode="numeric" autocomplete="off" placeholder="Answer" required />
+  </label>
+  <div class="captcha" style="margin-top: 5px">
+    <span class="captcha-question">{{ captcha_question }} = ?</span>
+    <button class="ghost small" type="button" hx-get="/admin/login/captcha" hx-target="#captcha-block" hx-swap="outerHTML">New question</button>
+  </div>
+</div>

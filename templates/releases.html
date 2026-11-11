@@ -1,11 +1,62 @@
 {% extends "base.html" %}
+{% block title %}Releases{% endblock %}
+{% block crumbs %}<span>/</span><strong>Releases</strong>{% endblock %}
 {% block body %}
-<h1>Releases</h1>
-<p class="muted">Publishing is done by CI with the service token. This page is read-only.</p>
-<table>
-  <tr><th>ID</th><th>Product</th><th>Version</th><th>Channel</th><th>Status</th><th>Mandatory</th><th>Created</th></tr>
-  {% for release in releases %}
-  <tr><td>#{{ release.id }}</td><td>{{ release.product_id }}</td><td>{{ release.version }}</td><td>{{ release.channel }}</td><td>{{ release.status }}</td><td>{{ 'yes' if release.mandatory else 'no' }}</td><td class="muted">{{ release.created_at }}</td></tr>
-  {% else %}<tr><td colspan="7" class="muted">No releases yet.</td></tr>{% endfor %}
-</table>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">OTA shelf</p>
+    <h1>Release manifest.</h1>
+    <p class="lede">One signed manifest per product, channel and version. CI can publish with a scoped service token; operators can upload here.</p>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom: 28px">
+  <div class="panel-head"><h2>Upload release</h2><span class="tiny">ZIP · max 600 MB</span></div>
+  <div class="panel-body">
+    {% if products %}
+    <form class="form" method="post" action="/admin/releases/upload" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}" />
+      <div class="form-row">
+        <label class="field"><span>Product</span><select name="product_id" required>{% for product in products %}<option value="{{ product.id }}">{{ product.name }}</option>{% endfor %}</select></label>
+        <label class="field"><span>Version</span><input name="version" placeholder="1.2.3" pattern="[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?" required /></label>
+        <label class="field"><span>Channel</span><select name="channel"><option value="stable">Stable</option><option value="beta">Beta</option></select></label>
+        <label class="field"><span>Platform</span><select name="platform"><option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option></select></label>
+      </div>
+      <div class="form-row">
+        <label class="field"><span>Minimum version</span><input name="min_version" value="0.0.0" /></label>
+        <label class="check"><input name="mandatory" type="checkbox" value="true" /> Mandatory</label>
+        <label class="check"><input name="security" type="checkbox" value="true" /> Security update</label>
+        <label class="field"><span>Artifact ZIP</span><input name="artifact" type="file" accept=".zip,application/zip" required /></label>
+      </div>
+      <label class="field"><span>Notes</span><input name="notes" placeholder="What changed?" /></label>
+      <div class="form-actions"><button type="submit">Sign and publish</button></div>
+    </form>
+    {% else %}
+    <div class="empty"><strong>No products yet.</strong>Create a product before publishing a release.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head"><h2>Published manifests</h2><span class="tiny">{{ releases|length }} shown</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Release</th><th>Product</th><th>Channel</th><th>Platform</th><th>Artifact</th><th>Published</th></tr></thead>
+      <tbody>
+      {% for release in releases %}
+      <tr id="release-{{ release.id }}">
+        <td><strong>{{ release.version }}</strong><div class="mono">{{ release.min_version }} minimum{% if release.mandatory %} · mandatory{% endif %}{% if release.security %} · security{% endif %}</div></td>
+        <td class="mono">{{ product_map[release.product_id].slug if release.product_id in product_map else release.product_id }}</td>
+        <td><span class="stamp mute">{{ release.channel }}</span></td>
+        <td>{{ release.platform }}</td>
+        <td class="code">{{ release.sha256[:18] }}…</td>
+        <td class="mono">{{ release.created_at.strftime('%d %b %Y · %H:%M') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty"><strong>Nothing published.</strong>Upload a ZIP above or let CI publish a protected tag.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
