@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vaproh/license-desk/internal/ota"
+	"github.com/vaproh/keydeck/internal/ota"
 )
 
 func (a *App) OTARouter() http.Handler {

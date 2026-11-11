@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vaproh/license-desk/internal/auth"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,39}$`)

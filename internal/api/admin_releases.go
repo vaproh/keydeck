@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/vaproh/license-desk/internal/auth"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 func (a *App) listReleases(w http.ResponseWriter, r *http.Request) {

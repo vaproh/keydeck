@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vaproh/license-desk/internal/auth"
+	"github.com/vaproh/keydeck/internal/auth"
 )
 
 func (a *App) AuthRouter() http.Handler {

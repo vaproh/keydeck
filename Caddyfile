@@ -1,6 +1,6 @@
 {$LICENSE_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy desk:8080
+	reverse_proxy keydeck:8080
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -10,7 +10,7 @@
 
 {$OTA_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy desk:8081
+	reverse_proxy keydeck:8081
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -22,7 +22,7 @@
 	encode zstd gzip
 	@blocked not remote_ip {$ADMIN_ALLOW}
 	respond @blocked "Not found" 404
-	reverse_proxy desk:8082
+	reverse_proxy keydeck:8082
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

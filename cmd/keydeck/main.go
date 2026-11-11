@@ -17,11 +17,11 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/vaproh/license-desk/internal/api"
-	"github.com/vaproh/license-desk/internal/auth"
-	"github.com/vaproh/license-desk/internal/config"
-	"github.com/vaproh/license-desk/internal/db"
-	"github.com/vaproh/license-desk/internal/server"
+	"github.com/vaproh/keydeck/internal/api"
+	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/db"
+	"github.com/vaproh/keydeck/internal/server"
 )
 
 func main() {

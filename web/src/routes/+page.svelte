@@ -36,7 +36,7 @@
 <div class="space-y-8">
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div>
-			<p class="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">License desk</p>
+			<p class="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Keydeck</p>
 			<h1 class="mt-1 text-3xl font-semibold tracking-tight">Control room</h1>
 			<p class="mt-1 max-w-xl text-sm text-muted-foreground">Keys, activations and releases for every product, served from one desk.</p>
 		</div>

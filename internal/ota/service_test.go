@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaproh/license-desk/internal/config"
+	"github.com/vaproh/keydeck/internal/config"
 )
 
 func TestDownloadToken(t *testing.T) {

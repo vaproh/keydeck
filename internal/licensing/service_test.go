@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 func TestEffectiveExpiry(t *testing.T) {

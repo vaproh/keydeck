@@ -5,6 +5,7 @@
 	import { Input } from '#lib/components/ui/input';
 	import { Label } from '#lib/components/ui/label';
 	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card';
+	import logo from '#lib/assets/favicon.svg';
 
 	type Captcha = { id: string; question: string; expires_in: number };
 
@@ -42,10 +43,10 @@
 <div class="grid min-h-screen place-items-center px-5 py-10">
 	<div class="w-full max-w-sm">
 		<div class="mb-6 flex items-center gap-3">
-			<div class="grid size-10 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">LD</div>
+			<img src={logo} alt="" class="size-10 rounded-md" />
 			<div>
-				<p class="text-sm font-semibold">License desk</p>
-				<p class="text-xs text-muted-foreground">anomly.wtf · private control room</p>
+				<p class="text-sm font-semibold">Keydeck</p>
+				<p class="text-xs text-muted-foreground">private license + release control</p>
 			</div>
 		</div>
 		<Card class="desk-rise">

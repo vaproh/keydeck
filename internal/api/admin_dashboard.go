@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 func (a *App) stats(w http.ResponseWriter, r *http.Request) {

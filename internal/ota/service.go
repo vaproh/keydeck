@@ -17,8 +17,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/mod/semver"
 
-	"github.com/vaproh/license-desk/internal/config"
-	"github.com/vaproh/license-desk/internal/store"
+	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 var (
