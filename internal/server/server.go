@@ -2,6 +2,7 @@ package server
 
 import (
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -11,19 +12,24 @@ import (
 	"github.com/vaproh/license-desk/web"
 )
 
-func Public() http.Handler {
+func License(logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
-	r.Get("/healthz", health)
-	// License and OTA endpoints live here. Admin routes must never be mounted
-	// on this listener because it is exposed on the public license domain.
+	base(r, logger)
+	// Activation, heartbeat, and deactivation belong here. Never mount admin
+	// or OTA routes on the license listener.
 	return r
 }
 
-func Admin() http.Handler {
+func OTA(logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
-	r.Get("/healthz", health)
+	base(r, logger)
+	// Update-check, manifest, and artifact download belong here.
+	return r
+}
+
+func Admin(logger *slog.Logger) http.Handler {
+	r := chi.NewRouter()
+	base(r, logger)
 
 	assets, err := fs.Sub(web.Dist, "build")
 	if err != nil {
@@ -37,6 +43,14 @@ func Admin() http.Handler {
 		http.Redirect(w, r, "/admin", http.StatusFound)
 	})
 	return r
+}
+
+func base(r chi.Router, logger *slog.Logger) {
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(RequestLogger(logger))
+	r.Use(Recoverer(logger))
+	r.Get("/healthz", health)
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

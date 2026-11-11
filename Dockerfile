@@ -18,6 +18,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/desk ./
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=gobuild /out/desk /desk
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8082
 USER nonroot:nonroot
 ENTRYPOINT ["/desk"]

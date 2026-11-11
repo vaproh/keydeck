@@ -21,12 +21,14 @@ services:
       db:
         condition: service_healthy
     environment:
-      PORT_PUBLIC: 8080
-      PORT_ADMIN: 8081
+      PORT_LICENSE: 8080
+      PORT_OTA: 8081
+      PORT_ADMIN: 8082
       DATABASE_URL: postgres://${POSTGRES_USER:-license}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-license}?sslmode=disable
     expose:
       - '8080'
       - '8081'
+      - '8082'
     healthcheck:
       test: ['CMD', '/desk', 'healthcheck']
       interval: 10s
@@ -43,7 +45,8 @@ services:
       - '80:80'
       - '443:443'
     environment:
-      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+      LICENSE_DOMAIN: ${LICENSE_DOMAIN:?set LICENSE_DOMAIN}
+      OTA_DOMAIN: ${OTA_DOMAIN:?set OTA_DOMAIN}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
       ADMIN_ALLOW: ${ADMIN_ALLOW:?set ADMIN_ALLOW to your public IP or CIDR}
     volumes:
