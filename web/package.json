@@ -50,10 +50,5 @@
 		"motion": "^14.12.0",
 		"tailwind-merge": "^3.7.0"
 	},
-	"packageManager": "pnpm@12.17.0",
-	"pnpm": {
-		"overrides": {
-			"minimatch": ">=11.0.8"
-		}
-	}
+	"packageManager": "pnpm@12.17.0"
 }

@@ -2,12 +2,12 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { api } from '#lib/api';
+	import { Button } from '#lib/components/ui/button';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card';
+	import { Badge } from '#lib/components/ui/badge';
 
 	type Product = { id: number; slug: string; name: string; status: string; created_at: string };
 	type Item = { id: number; key: string; label: string };

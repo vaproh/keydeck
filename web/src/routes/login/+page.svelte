@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, login } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { api, login } from '#lib/api';
+	import { Button } from '#lib/components/ui/button';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card';
 
 	type Captcha = { id: string; question: string; expires_in: number };
 

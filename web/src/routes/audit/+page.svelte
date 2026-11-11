@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
-	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui/table';
+	import { api } from '#lib/api';
+	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#lib/components/ui/table';
 
 	type Event = { id: number; actor: string; action: string; target: string; metadata: unknown; created_at: string };
 	let events = $state<Event[]>([]);

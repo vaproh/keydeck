@@ -4,8 +4,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Toaster } from '$lib/components/ui/sonner';
-	import { me, logout, type Session } from '$lib/api';
+	import { Toaster } from '#lib/components/ui/sonner';
+	import { me, logout, type Session } from '#lib/api';
 	import { LayoutDashboard, Boxes, KeyRound, RadioTower, ScrollText, LogOut, ArrowUpRight } from '@lucide/svelte';
 
 	let { children } = $props();

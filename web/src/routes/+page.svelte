@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui/table';
-	import { Badge } from '$lib/components/ui/badge';
+	import { api } from '#lib/api';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card';
+	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#lib/components/ui/table';
+	import { Badge } from '#lib/components/ui/badge';
 	import { Activity, KeyRound, MonitorSmartphone, TriangleAlert } from '@lucide/svelte';
 
 	type Stats = {

@@ -12,6 +12,12 @@
 			],
 			"$lib/*": [
 				"./src/lib/*"
+			],
+			"#lib": [
+				"./src/lib/index.ts"
+			],
+			"#lib/*": [
+				"./src/lib/*"
 			]
 		}
 	},

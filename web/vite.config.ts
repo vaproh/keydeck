@@ -9,7 +9,6 @@ export default defineConfig({
 		sveltekit({
 			adapter: adapter({ fallback: 'index.html' }),
 			paths: { base: '/admin' },
-			alias: { '$lib': 'src/lib' },
 			compilerOptions: {
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true

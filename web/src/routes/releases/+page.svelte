@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui/table';
-	import { Badge } from '$lib/components/ui/badge';
+	import { api } from '#lib/api';
+	import { Button } from '#lib/components/ui/button';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card';
+	import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#lib/components/ui/table';
+	import { Badge } from '#lib/components/ui/badge';
 	import { Upload, RadioTower } from '@lucide/svelte';
 
 	type Product = { id: number; slug: string; name: string };
@@ -109,7 +109,7 @@
 					<div class="space-y-1.5"><Label for="notes">Release notes</Label><textarea id="notes" class="min-h-20 w-full rounded-md border border-input bg-background p-2 text-sm" bind:value={form.notes}></textarea></div>
 					<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.mandatory} /> Mandatory update</label>
 					<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={form.security} /> Security update</label>
-					<Input type="file" accept=".zip" onchange={(e) => (file = e.currentTarget.files?.[0] ?? null)} required />
+					<Input type="file" accept=".zip" onchange={(e: Event) => { const input = e.currentTarget as HTMLInputElement; file = input.files?.[0] ?? null; }} required />
 					<Button class="w-full" type="submit" disabled={busy || !file}>{busy ? 'Uploading…' : 'Publish'}<Upload class="size-4" /></Button>
 				</form>
 			</CardContent>
