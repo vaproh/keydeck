@@ -406,12 +406,14 @@ class ReleaseRequest(BaseModel):
     notes: str = ""
 
 
-ARTIFACTS_DIR = Path(os.getenv("LICENSE_ARTIFACTS_DIR", "artifacts"))
+def artifacts_dir() -> Path:
+    """Read per call so both containers can share a mounted volume."""
+    return Path(os.getenv("LICENSE_ARTIFACTS_DIR", "artifacts"))
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 
 
 def _artifact_target(slug: str, version: str) -> Path:
-    target = ARTIFACTS_DIR / slug / version / "app.zip"
+    target = artifacts_dir() / slug / version / "app.zip"
     target.parent.mkdir(parents=True, exist_ok=True)
     return target
 

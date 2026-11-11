@@ -567,3 +567,75 @@ def test_release_upload_is_idempotent(admin_app):
     finally:
         db.close()
     assert len(rows) == 1
+
+
+def test_download_requires_a_nonzero_expiry(public):
+    from lsapp import api_public
+
+    with pytest.raises(Exception) as rejected:
+        api_public.download(1, token="0" * 32, exp=0, product="reorchestra", db=None)
+    assert getattr(rejected.value, "status_code", None) == 403
+
+
+def test_artifact_uploaded_by_admin_is_downloadable_by_api(
+    admin_app, public
+):
+    """The two containers only share a mounted artifacts directory."""
+    import hashlib
+    from urllib.parse import urlparse
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+
+    payload = b"PK-shared-artifact"
+    digest = hashlib.sha256(payload).hexdigest()
+    created = admin.post(
+        "/v1/admin/products/reorchestra/releases",
+        headers={"X-Service-Token": "ci-service-token"},
+        data={
+            "version": "2.0.0",
+            "channel": "stable",
+            "platform": "windows",
+            "min_version": "1.4.0",
+            "sha256": digest,
+        },
+        files={"artifact": ("app.zip", payload, "application/zip")},
+    )
+    assert created.status_code == 200, created.text
+
+    check = public.get(
+        "/v1/update-check",
+        params={"product": "reorchestra", "channel": "stable", "current": "1.0.0"},
+    ).json()
+    # min_version is part of the signed body, not just the release row.
+    assert check["manifest"]["min_version"] == "1.4.0"
+
+    parsed = urlparse(check["download_url"])
+    assert parsed.scheme == "https" and parsed.netloc == "license.test"
+
+    downloaded = public.get(f"{parsed.path}?{parsed.query}")
+    assert downloaded.status_code == 200
+    assert downloaded.content == payload
+    assert downloaded.headers["content-type"] == "application/zip"
+
+
+def test_download_path_is_shared_between_services(public, admin_app):
+    """A missing artifact reads as 404 from the public service, not a 500."""
+    from lsapp import api_admin
+
+    target = api_admin.artifacts_dir() / "reorchestra" / "9.9.9" / "app.zip"
+    assert str(target).endswith("artifacts/reorchestra/9.9.9/app.zip")
+
+
+def test_production_requires_an_absolute_public_url(monkeypatch):
+    import pytest as _pytest
+    from lsapp import api_public
+
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("LICENSE_REQUIRE_PUBLIC_URL", "1")
+    with _pytest.raises(RuntimeError):
+        api_public.public_base_url()
+
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://license.example.com")
+    assert api_public.public_base_url() == "https://license.example.com"

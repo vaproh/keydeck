@@ -143,7 +143,7 @@ def update_check(
     # The download token is short-lived and bound to this release and product.
     expires = int(datetime.now(UTC).timestamp()) + DOWNLOAD_TTL
     token = _download_token(row.id, prod.slug, expires)
-    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    base = public_base_url()
     download_url = (
         f"{base}/v1/download/{row.id}?token={token}&exp={expires}&product={prod.slug}"
     )
@@ -155,6 +155,14 @@ def update_check(
         "download_url": download_url,
         "expires_at": expires,
     }
+
+
+def public_base_url() -> str:
+    """Absolute public URL; production refuses to start without it."""
+    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+    if not base and os.getenv("LICENSE_REQUIRE_PUBLIC_URL") == "1":
+        raise RuntimeError("PUBLIC_BASE_URL must be set in production")
+    return base
 
 
 def _download_token(release_id: int, product_slug: str, expires: int) -> str:
@@ -172,14 +180,17 @@ def download(
     product: str = "",
     db: Session = Depends(get_db),
 ):
+    # Reject a missing or stale token before touching the database.
+    if not exp:
+        raise HTTPException(status_code=403, detail="Download token expired")
+    if exp < int(datetime.now(UTC).timestamp()):
+        raise HTTPException(status_code=403, detail="Download token expired")
     row = db.query(Release).filter(Release.id == release_id, Release.status == "published").first()
     if not row:
         raise HTTPException(status_code=404, detail="Release not found")
     owner = db.query(Product).filter(Product.id == row.product_id).first()
     if not owner or owner.slug != product:
         raise HTTPException(status_code=403, detail="Token is for another product")
-    if exp and exp < int(datetime.now(UTC).timestamp()):
-        raise HTTPException(status_code=403, detail="Download token expired")
     expected = _download_token(row.id, owner.slug, exp)
     if len(token) != 32 or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=403, detail="Invalid download token")

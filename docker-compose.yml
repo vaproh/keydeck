@@ -17,6 +17,11 @@ services:
       LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?set per-product license key}
       LICENSE_DOWNLOAD_SECRET: ${LICENSE_DOWNLOAD_SECRET}
       LICENSE_OFFLINE_GRACE_HOURS: "24"
+      LICENSE_ARTIFACTS_DIR: /artifacts
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set the public license URL}
+      LICENSE_REQUIRE_PUBLIC_URL: "1"
+    volumes:
+      - artifacts:/artifacts
     depends_on: [postgres]
     restart: unless-stopped
 
@@ -31,6 +36,11 @@ services:
       LICENSE_ADMIN_TOTP_SECRET: ${LICENSE_ADMIN_TOTP_SECRET}
       ADMIN_SERVICE_TOKEN: ${ADMIN_SERVICE_TOKEN:?set CI service token}
       ADMIN_COOKIE_SECURE: "1"
+      LICENSE_ARTIFACTS_DIR: /artifacts
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set the public license URL}
+      LICENSE_REQUIRE_PUBLIC_URL: "1"
+    volumes:
+      - artifacts:/artifacts
     depends_on: [postgres]
     restart: unless-stopped
 
@@ -46,3 +56,4 @@ services:
 volumes:
   pgdata:
   caddy_data:
+  artifacts:
