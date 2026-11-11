@@ -48,12 +48,11 @@ export const api = {
 		request<T>(path, { method: 'POST', body: form })
 };
 
-export async function login(password: string, totp: string, captchaId: string, captchaAnswer: string) {
+export async function login(password: string, totp: string, turnstileToken: string) {
 	const session = await api.post<Session>('/auth/login', {
 		password,
 		totp,
-		captcha_id: captchaId,
-		captcha_answer: captchaAnswer
+		turnstile_token: turnstileToken
 	});
 	setCsrf(session.csrf);
 	return session;

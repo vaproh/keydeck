@@ -9,34 +9,40 @@ import (
 )
 
 type Config struct {
-	DatabaseURL       string
-	PortLicense       string
-	PortOTA           string
-	PortAdmin         string
-	PublicBaseURL     string
-	ArtifactsDir      string
-	AdminPasswordHash string
-	AdminTOTPSecret   string
-	AdminActor        string
-	DownloadSecret    string
-	CookieSecure      bool
-	LogLevel          string
+	DatabaseURL           string
+	PortLicense           string
+	PortOTA               string
+	PortAdmin             string
+	PublicBaseURL         string
+	ArtifactsDir          string
+	AdminPasswordHash     string
+	AdminTOTPSecret       string
+	AdminActor            string
+	DownloadSecret        string
+	TurnstileSiteKey      string
+	TurnstileSecretKey    string
+	TurnstileExpectedHost string
+	CookieSecure          bool
+	LogLevel              string
 }
 
 func Load() (Config, error) {
 	c := Config{
-		DatabaseURL:       env("DATABASE_URL", "postgres://keydeck:keydeck@localhost:5432/keydeck?sslmode=disable"),
-		PortLicense:       env("PORT_LICENSE", "8080"),
-		PortOTA:           env("PORT_OTA", "8081"),
-		PortAdmin:         env("PORT_ADMIN", "8082"),
-		PublicBaseURL:     strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
-		ArtifactsDir:      env("ARTIFACTS_DIR", "./artifacts"),
-		AdminPasswordHash: os.Getenv("ADMIN_PASSWORD_HASH"),
-		AdminTOTPSecret:   os.Getenv("ADMIN_TOTP_SECRET"),
-		AdminActor:        env("ADMIN_ACTOR", "admin"),
-		DownloadSecret:    os.Getenv("DOWNLOAD_SECRET"),
-		CookieSecure:      envBool("COOKIE_SECURE", true),
-		LogLevel:          env("LOG_LEVEL", "info"),
+		DatabaseURL:           env("DATABASE_URL", "postgres://keydeck:keydeck@localhost:5432/keydeck?sslmode=disable"),
+		PortLicense:           env("PORT_LICENSE", "8080"),
+		PortOTA:               env("PORT_OTA", "8081"),
+		PortAdmin:             env("PORT_ADMIN", "8082"),
+		PublicBaseURL:         strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		ArtifactsDir:          env("ARTIFACTS_DIR", "./artifacts"),
+		AdminPasswordHash:     os.Getenv("ADMIN_PASSWORD_HASH"),
+		AdminTOTPSecret:       os.Getenv("ADMIN_TOTP_SECRET"),
+		AdminActor:            env("ADMIN_ACTOR", "admin"),
+		DownloadSecret:        os.Getenv("DOWNLOAD_SECRET"),
+		TurnstileSiteKey:      os.Getenv("TURNSTILE_SITE_KEY"),
+		TurnstileSecretKey:    os.Getenv("TURNSTILE_SECRET_KEY"),
+		TurnstileExpectedHost: os.Getenv("TURNSTILE_EXPECTED_HOSTNAME"),
+		CookieSecure:          envBool("COOKIE_SECURE", true),
+		LogLevel:              env("LOG_LEVEL", "info"),
 	}
 	if c.AdminPasswordHash == "" {
 		return c, fmt.Errorf("ADMIN_PASSWORD_HASH is required")
@@ -46,6 +52,15 @@ func Load() (Config, error) {
 	}
 	if c.DownloadSecret == "" {
 		return c, fmt.Errorf("DOWNLOAD_SECRET is required")
+	}
+	if c.TurnstileSiteKey == "" {
+		return c, fmt.Errorf("TURNSTILE_SITE_KEY is required")
+	}
+	if c.TurnstileSecretKey == "" {
+		return c, fmt.Errorf("TURNSTILE_SECRET_KEY is required")
+	}
+	if c.TurnstileExpectedHost == "" {
+		return c, fmt.Errorf("TURNSTILE_EXPECTED_HOSTNAME is required")
 	}
 	if c.PublicBaseURL == "" || !strings.HasPrefix(c.PublicBaseURL, "https://") {
 		return c, fmt.Errorf("PUBLIC_BASE_URL must be an https URL")
