@@ -78,6 +78,18 @@ just build      # production image
 just up         # start the VPS stack
 ```
 
+## Host health ports
+
+Keydeck publishes its three listeners for local health checks and HAProxy:
+
+```text
+127.0.0.1:8080  license API
+127.0.0.1:8081  OTA API
+127.0.0.1:8082  admin SPA/API
+```
+
+`KEYDECK_BIND_IP` controls the bind address. Keep it on `127.0.0.1` when HAProxy runs on the same host. Use a private interface or `0.0.0.0` behind a firewall if HAProxy is remote; never expose `8082` publicly without an IP allowlist.
+
 ## Domains
 
 Point three DNS records at the VPS:
