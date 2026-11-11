@@ -59,7 +59,7 @@ The short version:
 ```text
 cmd/keydeck/              CLI: serve, migrate, passwd, keygen, healthcheck
 internal/api/             public license/OTA handlers + private admin API
-internal/auth/            Argon2id, TOTP, captcha, sessions, CSRF
+internal/auth/            Argon2id, TOTP, Turnstile, sessions, CSRF
 internal/config/          environment and per-product signing keys
 internal/db/              pgx pool, embedded migrations
 internal/db/queries/      sqlc source queries

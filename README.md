@@ -42,7 +42,7 @@ Postgres is the source of truth for products, keys, activations, releases, sessi
 - **Lifetime keys** with no expiry but full revocation and heartbeat checks.
 - **Signed OTA manifests** with SHA-256, stable/beta channels, and short-lived download URLs.
 - **Scoped agent tokens** for project agents: product-limited, scope-limited, revocable, and shown once.
-- **Private admin** with Argon2id, TOTP, captcha, CSRF, rate limiting, IP allowlisting, seven-day sessions, and light/dark mode.
+- **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, IP allowlisting, seven-day sessions, and light/dark mode. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 - **Structured JSON logs** with request IDs. Keys, tokens, cookies, and bodies are never logged.
 - **Docker-only deployment** with Caddy TLS and Watchtower-based continuous deployment.
 
@@ -62,7 +62,7 @@ go run ./cmd/keydeck keygen reorchestra   # put the output in .env
 go run ./cmd/keydeck passwd               # put the hash in ADMIN_PASSWORD_HASH
 ```
 
-Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD_SECRET`, and set the three domains.
+Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD_SECRET`, set the three domains, and add the Cloudflare Turnstile site key, secret key, and admin hostname. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 
 ```bash
 just test       # Go tests, including Postgres integration when TEST_DATABASE_URL is set

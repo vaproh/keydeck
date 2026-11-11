@@ -135,7 +135,7 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 ## 9. Admin requirements
 
 - Private hostname, TLS, IP allowlist.
-- Argon2id password, TOTP, math captcha.
+- Argon2id password, TOTP, Cloudflare Turnstile.
 - HttpOnly, SameSite cookie; CSRF token on mutations.
 - Login rate limit.
 - Product switcher.

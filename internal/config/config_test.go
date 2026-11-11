@@ -14,6 +14,9 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("DOWNLOAD_SECRET", "download")
 	t.Setenv("PUBLIC_BASE_URL", "https://ota.example.com/")
 	t.Setenv("COOKIE_SECURE", "false")
+	t.Setenv("TURNSTILE_SITE_KEY", "site")
+	t.Setenv("TURNSTILE_SECRET_KEY", "secret-key")
+	t.Setenv("TURNSTILE_EXPECTED_HOSTNAME", "admin.example.com")
 }
 
 func TestLoad(t *testing.T) {
@@ -28,6 +31,9 @@ func TestLoad(t *testing.T) {
 	if cfg.CookieSecure {
 		t.Fatal("COOKIE_SECURE was not read")
 	}
+	if cfg.TurnstileSiteKey != "site" || cfg.TurnstileExpectedHost != "admin.example.com" {
+		t.Fatalf("turnstile config missing: %+v", cfg)
+	}
 }
 
 func TestLoadRejectsMissingSecretsAndHTTP(t *testing.T) {
@@ -40,6 +46,14 @@ func TestLoadRejectsMissingSecretsAndHTTP(t *testing.T) {
 	t.Setenv("PUBLIC_BASE_URL", "http://ota.example.com")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "https") {
 		t.Fatalf("expected https error, got %v", err)
+	}
+}
+
+func TestLoadFailsClosedWithoutTurnstile(t *testing.T) {
+	setValidEnv(t)
+	t.Setenv("TURNSTILE_SECRET_KEY", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "TURNSTILE_SECRET_KEY") {
+		t.Fatalf("expected missing turnstile error, got %v", err)
 	}
 }
 

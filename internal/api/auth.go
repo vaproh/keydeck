@@ -12,7 +12,7 @@ import (
 
 func (a *App) AuthRouter() http.Handler {
 	r := chi.NewRouter()
-	r.Get("/captcha", a.captcha)
+	r.Get("/config", a.authConfig)
 	r.Post("/login", a.login)
 	r.Group(func(r chi.Router) {
 		r.Use(a.auth.Middleware)
@@ -22,29 +22,27 @@ func (a *App) AuthRouter() http.Handler {
 	return r
 }
 
-func (a *App) captcha(w http.ResponseWriter, _ *http.Request) {
-	id, question, expires := a.auth.Captcha()
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "question": question, "expires_in": expires})
+func (a *App) authConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"site_key": a.cfg.TurnstileSiteKey})
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Password      string `json:"password"`
-		TOTP          string `json:"totp"`
-		CaptchaID     string `json:"captcha_id"`
-		CaptchaAnswer string `json:"captcha_answer"`
+		Password       string `json:"password"`
+		TOTP           string `json:"totp"`
+		TurnstileToken string `json:"turnstile_token"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	session, err := a.auth.Login(r.Context(), auth.ClientIP(r), body.Password, body.TOTP, body.CaptchaID, body.CaptchaAnswer)
+	session, err := a.auth.Login(r.Context(), auth.ClientIP(r), body.Password, body.TOTP, body.TurnstileToken)
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrRateLimited):
 			writeError(w, http.StatusTooManyRequests, "too many attempts")
-		case errors.Is(err, auth.ErrCaptcha):
-			writeError(w, http.StatusUnauthorized, "captcha failed")
+		case errors.Is(err, auth.ErrTurnstile):
+			writeError(w, http.StatusUnauthorized, "human verification failed")
 		default:
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
 		}

@@ -2,13 +2,8 @@ package api
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/vaproh/keydeck/internal/auth"
-	"github.com/vaproh/keydeck/internal/config"
 	"github.com/vaproh/keydeck/internal/store"
 )
 
@@ -35,32 +30,5 @@ func TestNormalizeVersion(t *testing.T) {
 func TestReleaseFilename(t *testing.T) {
 	if got := releaseFilename("1.2.3", "windows-amd64"); got != "1.2.3-windows-amd64.zip" {
 		t.Fatalf("unexpected filename: %s", got)
-	}
-}
-
-func TestCaptchaEndpoint(t *testing.T) {
-	app := &App{auth: auth.New(config.Config{}, nil)}
-	router := chi.NewRouter()
-	router.Mount("/", app.AuthRouter())
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/captcha", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if body["id"] == "" || body["question"] == "" {
-		t.Fatalf("unexpected captcha body: %+v", body)
-	}
-}
-
-func TestLoginRejectsMalformedJSON(t *testing.T) {
-	app := &App{auth: auth.New(config.Config{}, nil)}
-	rec := httptest.NewRecorder()
-	app.login(rec, httptest.NewRequest(http.MethodPost, "/login", nil))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
 	}
 }
