@@ -4,7 +4,7 @@ Keydeck is an open-source, self-hosted license and OTA control plane for desktop
 
 ## Non-negotiables
 
-- **Never push directly to `main`.** Create a feature branch, commit there, push it, and open a pull request. Wait for required checks.
+- **Never push directly to `main` or `beta`.** Create a feature branch, commit there, push it, and open a pull request against `beta`. Wait for required checks.
 - **Never commit secrets.** No `.env`, signing keys, `DOWNLOAD_SECRET`, password hashes, TOTP secrets, database dumps, or customer keys.
 - **The server is the key clock.** Do not introduce client-clock validity checks, trusting the local clock, or client-controlled expiry.
 - **Trial keys have zero grace.** Do not add offline trial access.
@@ -15,7 +15,7 @@ Keydeck is an open-source, self-hosted license and OTA control plane for desktop
 ## Workflow
 
 1. Read the relevant issue or PRD.
-2. Create a branch: `feat/...`, `fix/...`, or `chore/...`.
+2. Branch from `beta` and open the PR against `beta`. Use `feat/...`, `fix/...`, or `chore/...`.
 3. Make the smallest complete change, including tests and docs.
 4. Run:
 
@@ -36,11 +36,13 @@ just audit
 7. Wait for `test` to pass. Do not merge your own PR without checking the diff.
 8. Delete the branch after merge.
 
+`main` is stable. Only release managers promote `beta` to `main` and create tags. See [docs/RELEASING.md](docs/RELEASING.md).
+
 Do not use `--no-verify`, force-push `main`, or rewrite shared history.
 
 ## Client agents
 
-If the task is to integrate Keydeck into another product, add a limit, or add a feature gate, follow [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) before changing code.
+If the task is to integrate Keydeck into another product, add a limit, or add a feature gate, follow [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) before changing code. Agents use a scoped bearer token from the project `.env`; never the admin password, TOTP seed, or session cookie.
 
 The short version:
 
@@ -50,6 +52,7 @@ The short version:
 - Enforce it in the client at the resource boundary.
 - Add tests for missing, zero, at-limit, above-limit, and disabled-feature states.
 - The server returns limits/features; it does not enforce product-specific ones.
+- Publish artifacts through the admin API with a `releases:write` token; the OTA client verifies the signed manifest and SHA-256.
 - Never add pricing, billing, or tiers.
 
 ## Repository map
@@ -57,7 +60,7 @@ The short version:
 ```text
 cmd/keydeck/              CLI: serve, migrate, passwd, keygen, healthcheck
 internal/api/             public license/OTA handlers + private admin API
-internal/auth/            Argon2id, TOTP, captcha, sessions, CSRF
+internal/auth/            Argon2id, TOTP, Turnstile, sessions, CSRF
 internal/config/          environment and per-product signing keys
 internal/db/              pgx pool, embedded migrations
 internal/db/queries/      sqlc source queries
@@ -114,11 +117,13 @@ Migrations are additive and forward-only. Never edit an applied migration.
 
 ## Releases
 
-- Releases are created only from protected `v*` tags.
+- `main` is stable; `beta` is the integration branch.
+- Releases are created only from protected `v*` tags: stable on `main`, pre-release on `beta`.
 - The workflow runs tests, builds the frontend, builds `keydeck`, pushes the GHCR image, generates release notes automatically, and attaches a VPS bundle.
 - The VPS bundle must contain the compiled binary and frontend; the VPS must not need a Go or Node toolchain.
-- Watchtower pulls the new `latest` image and restarts the app container.
+- Watchtower pulls the new `latest` image for stable releases. Beta bundles pin the beta image.
 - Never move or reuse a published tag.
+- Agents never create release tags.
 
 ## UI direction
 

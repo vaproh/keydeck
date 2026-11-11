@@ -11,19 +11,21 @@
 	import { Copy, KeyRound } from '@lucide/svelte';
 
 	type Product = { id: number; slug: string; name: string; status: string };
+	type Preset = { id: number; name: string; limits_json: unknown; features_json: unknown; validity_days: number | null; max_activations: number };
 	type License = {
-		id: number; product_id: number; key_last4: string; plan_name: string; key_type: string;
+		id: number; product_id: number; key_last4: string; plan_name: string; holder_name: string; key_type: string;
 		expires_at: string; activation_expires_at: string | null; status: string; max_activations: number;
 		activation_count: number; product_slug: string;
 	};
 	let products = $state<Product[]>([]);
 	let licenses = $state<License[]>([]);
+	let presets = $state<Preset[]>([]);
 	let productId = $state('');
 	let error = $state('');
 	let rawKey = $state('');
 	let busy = $state(false);
 	let form = $state({
-		plan_name: 'Personal', key_type: 'timed', trial_minutes: 15, validity_days: 30,
+		preset_id: 0, plan_name: 'Personal', holder_name: '', key_type: 'timed', trial_minutes: 15, validity_days: 30,
 		starts_on_activation: true, one_time_activation: false, grace_seconds: 86400,
 		max_activations: 1, limits: '{"max_accounts": 25}', features: '["warmup"]', notes: ''
 	});
@@ -33,15 +35,38 @@
 		products = data.products;
 		if (!productId && products[0]) productId = String(products[0].id);
 	}
+	async function loadPresets() {
+		if (!productId) {
+			presets = [];
+			return;
+		}
+		const data = await api.get<{ presets: Preset[] }>(`/admin/products/${productId}`);
+		presets = data.presets;
+	}
 	async function loadLicenses() {
 		const query = productId ? `?product_id=${productId}` : '';
 		const data = await api.get<{ licenses: License[] }>(`/admin/licenses${query}`);
 		licenses = data.licenses;
 	}
+	function applyPreset() {
+		const preset = presets.find((p) => p.id === Number(form.preset_id));
+		if (!preset) return;
+		form.plan_name = preset.name;
+		form.max_activations = preset.max_activations;
+		if (preset.validity_days) form.validity_days = preset.validity_days;
+		form.limits = JSON.stringify(preset.limits_json ?? {});
+		form.features = JSON.stringify(preset.features_json ?? []);
+	}
+	async function changeProduct() {
+		form.preset_id = 0;
+		await loadPresets();
+		await loadLicenses();
+	}
 	async function load() {
 		error = '';
 		try {
 			await loadProducts();
+			await loadPresets();
 			await loadLicenses();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not load keys.';
@@ -60,7 +85,7 @@
 		error = '';
 		try {
 			const body: Record<string, unknown> = {
-				plan_name: form.plan_name, key_type: form.key_type, starts_on_activation: form.starts_on_activation,
+				preset_id: form.preset_id, plan_name: form.plan_name, holder_name: form.holder_name, key_type: form.key_type, starts_on_activation: form.starts_on_activation,
 				one_time_activation: form.one_time_activation, grace_seconds: form.grace_seconds,
 				max_activations: form.max_activations, limits: JSON.parse(form.limits),
 				features: JSON.parse(form.features), notes: form.notes
@@ -98,7 +123,7 @@
 			<h1 class="mt-1 text-3xl font-semibold tracking-tight">Keys</h1>
 			<p class="mt-1 text-sm text-muted-foreground">Issue trial, timed or lifetime keys. The server owns the clock.</p>
 		</div>
-		<select class="h-9 rounded-md border border-input bg-background px-3 text-sm" bind:value={productId} onchange={loadLicenses}>
+		<select class="h-9 rounded-md border border-input bg-background px-3 text-sm" bind:value={productId} onchange={changeProduct}>
 			{#each products as product (product.id)}<option value={String(product.id)}>{product.name}</option>{/each}
 		</select>
 	</div>
@@ -117,11 +142,12 @@
 	<div class="grid gap-6 xl:grid-cols-[1fr_380px]">
 		<section class="rounded-xl border border-border bg-card/80">
 			<Table>
-				<TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Type</TableHead><TableHead>Key</TableHead><TableHead>Activations</TableHead><TableHead>Expires</TableHead><TableHead></TableHead></TableRow></TableHeader>
+				<TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Assigned to</TableHead><TableHead>Type</TableHead><TableHead>Key</TableHead><TableHead>Activations</TableHead><TableHead>Expires</TableHead><TableHead></TableHead></TableRow></TableHeader>
 				<TableBody>
 					{#each licenses as row (row.id)}
 						<TableRow>
 							<TableCell class="font-medium">{row.plan_name}</TableCell>
+							<TableCell class="text-xs">{#if row.holder_name}{row.holder_name}{:else}<span class="text-muted-foreground">Unassigned</span>{/if}</TableCell>
 							<TableCell><Badge variant="outline">{row.key_type}</Badge></TableCell>
 							<TableCell class="font-mono text-xs text-muted-foreground">•••• {row.key_last4}</TableCell>
 							<TableCell class="text-xs">{row.activation_count}/{row.max_activations}</TableCell>
@@ -135,7 +161,7 @@
 							</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan={6} class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
+						<TableRow><TableCell colspan={7} class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>
@@ -145,7 +171,16 @@
 			<CardHeader><CardTitle class="flex items-center gap-2"><KeyRound class="size-4" /> Issue key</CardTitle></CardHeader>
 			<CardContent>
 				<form class="space-y-3" onsubmit={issue}>
+					{#if presets.length}
+						<div class="space-y-1.5"><Label for="preset">Plan preset</Label>
+							<select id="preset" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" bind:value={form.preset_id} onchange={applyPreset}>
+								<option value={0}>Custom</option>
+								{#each presets as preset (preset.id)}<option value={preset.id}>{preset.name}</option>{/each}
+							</select>
+						</div>
+					{/if}
 					<div class="space-y-1.5"><Label for="plan">Plan name</Label><Input id="plan" bind:value={form.plan_name} required /></div>
+					<div class="space-y-1.5"><Label for="holder">Assigned to</Label><Input id="holder" bind:value={form.holder_name} placeholder="Customer or machine name" maxlength={120} /></div>
 					<div class="space-y-1.5"><Label for="type">Type</Label>
 						<select id="type" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" bind:value={form.key_type}>
 							<option value="timed">Timed</option><option value="trial">Trial</option><option value="lifetime">Lifetime</option>

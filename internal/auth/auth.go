@@ -7,12 +7,11 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,25 +25,19 @@ import (
 )
 
 const cookieName = "desk_session"
-const sessionTTL = 12 * time.Hour
+const sessionTTL = 7 * 24 * time.Hour
 
 var (
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrRateLimited  = errors.New("too many attempts")
-	ErrCaptcha      = errors.New("captcha failed")
 )
 
 type Service struct {
-	cfg      config.Config
-	q        *store.Queries
-	mu       sync.Mutex
-	captchas map[string]captcha
-	fails    map[string][]time.Time
-}
-
-type captcha struct {
-	answer  string
-	expires time.Time
+	cfg       config.Config
+	q         *store.Queries
+	mu        sync.Mutex
+	fails     map[string][]time.Time
+	turnstile TurnstileVerifier
 }
 
 type Session struct {
@@ -53,28 +46,32 @@ type Session struct {
 	CSRF  string
 }
 
+// Agent is a scoped machine identity. ProductID 0 means all products.
+type Agent struct {
+	TokenID   int64
+	Name      string
+	Scopes    map[string]bool
+	ProductID int64
+	Bootstrap bool
+}
+
+func (a Agent) Has(scope string) bool { return a.Scopes[scope] }
+
 func New(cfg config.Config, q *store.Queries) *Service {
-	return &Service{cfg: cfg, q: q, captchas: map[string]captcha{}, fails: map[string][]time.Time{}}
+	return NewWithTurnstile(cfg, q, NewTurnstile(cfg.TurnstileSecretKey, cfg.TurnstileExpectedHost))
 }
 
-func (s *Service) Captcha() (string, string, int) {
-	a, _ := rand.Int(rand.Reader, big.NewInt(9))
-	b, _ := rand.Int(rand.Reader, big.NewInt(9))
-	id := randomToken(18)
-	answer := strconv.FormatInt(a.Int64()+b.Int64(), 10)
-	s.mu.Lock()
-	s.captchas[id] = captcha{answer: answer, expires: time.Now().Add(5 * time.Minute)}
-	s.mu.Unlock()
-	return id, fmt.Sprintf("%d + %d", a.Int64(), b.Int64()), 300
+func NewWithTurnstile(cfg config.Config, q *store.Queries, verifier TurnstileVerifier) *Service {
+	return &Service{cfg: cfg, q: q, fails: map[string][]time.Time{}, turnstile: verifier}
 }
 
-func (s *Service) Login(ctx context.Context, ip, password, code, captchaID, captchaAnswer string) (Session, error) {
+func (s *Service) Login(ctx context.Context, ip, password, code, turnstileToken string) (Session, error) {
 	if !s.allow(ip) {
 		return Session{}, ErrRateLimited
 	}
-	if !s.checkCaptcha(captchaID, captchaAnswer) {
+	if s.turnstile == nil || s.turnstile.Verify(ctx, turnstileToken, ip) != nil {
 		s.fail(ip)
-		return Session{}, ErrCaptcha
+		return Session{}, ErrTurnstile
 	}
 	if !verifyArgon2(s.cfg.AdminPasswordHash, password) {
 		s.fail(ip)
@@ -131,8 +128,46 @@ func (s *Service) ClearCookie() *http.Cookie {
 
 func (s *Service) CookieName() string { return cookieName }
 
+var AllScopes = []string{
+	"products:read", "products:write", "licenses:read", "licenses:write", "releases:write", "audit:read",
+}
+
+func allScopes() map[string]bool {
+	scopes := make(map[string]bool, len(AllScopes))
+	for _, scope := range AllScopes {
+		scopes[scope] = true
+	}
+	return scopes
+}
+
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if raw := bearer(r); raw != "" && s.cfg.BootstrapAdminToken != "" && subtle.ConstantTimeCompare([]byte(raw), []byte(s.cfg.BootstrapAdminToken)) == 1 {
+			agent := Agent{Name: "bootstrap", Scopes: allScopes(), Bootstrap: true}
+			ctx := context.WithValue(r.Context(), agentKey{}, agent)
+			ctx = context.WithValue(ctx, sessionKey{}, Session{Actor: "agent:bootstrap"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		if raw := bearer(r); strings.HasPrefix(raw, "kd_admin_") {
+			row, err := s.q.GetAdminTokenByHash(r.Context(), hash(raw))
+			if err != nil || row.RevokedAt.Valid || (row.ExpiresAt.Valid && !row.ExpiresAt.Time.After(time.Now())) {
+				writeAuthError(w, http.StatusUnauthorized)
+				return
+			}
+			var scopes []string
+			_ = json.Unmarshal(row.ScopesJson, &scopes)
+			agent := Agent{TokenID: row.ID, Name: row.Name, Scopes: map[string]bool{}, ProductID: row.ProductID}
+			for _, scope := range scopes {
+				agent.Scopes[scope] = true
+			}
+			_ = s.q.TouchAdminToken(r.Context(), row.ID)
+			ctx := context.WithValue(r.Context(), agentKey{}, agent)
+			session := Session{Actor: "agent:" + row.Name}
+			ctx = context.WithValue(ctx, sessionKey{}, session)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
 			writeAuthError(w, http.StatusUnauthorized)
@@ -159,23 +194,25 @@ func SessionFrom(ctx context.Context) Session {
 }
 
 type sessionKey struct{}
+type agentKey struct{}
+
+func AgentFrom(ctx context.Context) (Agent, bool) {
+	agent, ok := ctx.Value(agentKey{}).(Agent)
+	return agent, ok
+}
+
+func bearer(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(value) > 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return ""
+}
 
 func writeAuthError(w http.ResponseWriter, status int) {
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
-}
-
-func (s *Service) checkCaptcha(id, answer string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	item, ok := s.captchas[id]
-	if !ok || !item.expires.After(time.Now()) {
-		delete(s.captchas, id)
-		return false
-	}
-	delete(s.captchas, id)
-	return subtle.ConstantTimeCompare([]byte(item.answer), []byte(strings.TrimSpace(answer))) == 1
 }
 
 func (s *Service) allow(ip string) bool {
@@ -262,3 +299,13 @@ func HashPassword(password string) (string, error) {
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", memory, iterations, parallelism,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
+
+// NewAdminToken returns the one-time display value and the values stored server-side.
+func NewAdminToken() (raw, hashed, hint string) {
+	raw = "kd_admin_" + randomToken(32)
+	hinted := raw[len(raw)-4:]
+	return raw, hash(raw), hinted
+}
+
+// HashToken exposes the same SHA-256 representation used by bearer auth.
+func HashToken(raw string) string { return hash(raw) }

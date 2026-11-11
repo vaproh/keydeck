@@ -25,6 +25,9 @@ Existing license services are SaaS-first, expensive, or tied to one product. Key
 - One deployment serves multiple products.
 - Trial, timed, and lifetime keys are first-class.
 - The operator can change limits and expiry per key from an admin panel.
+- Every key can carry a holder name so the operator knows who it belongs to.
+- Coding agents can use scoped API tokens without the admin password.
+- The admin panel supports light and dark themes and keeps a seven-day session.
 - OTA delivery is product-scoped, signed, and verifiable.
 - Deployment is one Docker Compose stack on a VPS.
 - The repository is open source and releases are reproducible from tags.
@@ -132,7 +135,7 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 ## 9. Admin requirements
 
 - Private hostname, TLS, IP allowlist.
-- Argon2id password, TOTP, math captcha.
+- Argon2id password, TOTP, Cloudflare Turnstile.
 - HttpOnly, SameSite cookie; CSRF token on mutations.
 - Login rate limit.
 - Product switcher.

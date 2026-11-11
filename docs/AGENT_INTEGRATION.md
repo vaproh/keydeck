@@ -15,13 +15,44 @@ Keydeck is the authority. The client never decides validity.
 - The server does not enforce product-specific limits. The client does.
 - A limit is a product rule, not a security boundary against a patched client.
 
+## Agent access tokens
+
+Do not give a coding agent the admin password or TOTP seed. Create a scoped token in **Agent access** and put it in the client project's `.env`:
+
+```env
+KEYDECK_ADMIN_URL=https://admin.example.com
+KEYDECK_PRODUCT_SLUG=reorchestra
+KEYDECK_ADMIN_TOKEN=kd_admin_...
+```
+
+If the database is empty, start once with `BOOTSTRAP_ADMIN_TOKEN` set to a strong random value. It has every scope and can create the first scoped token; remove it from `.env` and restart immediately after.
+
+The agent sends the scoped token as a bearer:
+
+```bash
+curl -fsS "$KEYDECK_ADMIN_URL/api/admin/products/$PRODUCT_ID/limits" \
+  -H "Authorization: Bearer $KEYDECK_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"key":"max_projects","label":"Maximum projects"}'
+```
+
+Rules:
+
+- Keep `.env` out of git.
+- Never ship the token in a desktop client.
+- Use one token per project or agent.
+- Grant only the scopes required: `products:read`, `products:write`, `licenses:read`, `licenses:write`, `releases:write`, `audit:read`.
+- Scope the token to the product whenever possible.
+- Bearer tokens do not use CSRF; do not send the session cookie.
+- Revoke a token from **Agent access** if it leaks.
+
 ## 1. Create the product
 
 In the admin panel:
 
 1. Create a product with a stable lowercase slug, e.g. `reorchestra`.
 2. Register its key prefix, e.g. `REO`.
-3. Register the product's license public key and update public key.
+3. Omit the public keys and Keydeck generates the license and update signing keys server-side; or register existing public keys.
 4. Add the product limits.
 5. Add the product features.
 6. Create a plan preset for each common shape.
@@ -34,8 +65,6 @@ POST /api/admin/products
 {
   "slug": "reorchestra",
   "name": "ReOrchestra",
-  "license_public_key": "<base64 ed25519 public key>",
-  "update_public_key": "<base64 ed25519 public key>",
   "key_prefix": "REO"
 }
 ```
@@ -48,7 +77,7 @@ POST /api/admin/products/{id}/features
 {"key":"warmup","label":"Account warming"}
 ```
 
-Admin routes require the admin session cookie and `x-csrf-token` for mutations. Prefer the admin UI for manual setup.
+Every admin example in this guide uses a scoped bearer token. Agents never use the human session cookie.
 
 ## 2. Add a new limit
 
@@ -277,7 +306,59 @@ The activation screen is the only surface available without a valid lease.
 - Stop background work when the lease expires or is revoked.
 - Keep the app unable to perform the licensed function when the key is missing.
 
-## 10. OTA client
+## 10. Publish a release and wire OTA
+
+Use a token with `products:read` and `releases:write`, scoped to the product.
+
+```env
+KEYDECK_ADMIN_URL=https://admin.example.com
+KEYDECK_OTA_URL=https://ota.example.com
+KEYDECK_PRODUCT_SLUG=reorchestra
+KEYDECK_ADMIN_TOKEN=kd_admin_...
+```
+
+Build the client ZIP, then upload it:
+
+```bash
+curl -fsS "$KEYDECK_ADMIN_URL/api/admin/releases" \
+  -H "Authorization: Bearer $KEYDECK_ADMIN_TOKEN" \
+  -F "product_id=$PRODUCT_ID" \
+  -F "version=1.4.0" \
+  -F "channel=stable" \
+  -F "platform=windows-amd64" \
+  -F "min_version=1.0.0" \
+  -F "mandatory=false" \
+  -F "security=false" \
+  -F "notes=First stable build" \
+  -F "artifact=@dist/reorchestra-1.4.0-windows-amd64.zip"
+```
+
+Keydeck:
+
+1. Stores the artifact.
+2. Computes SHA-256.
+3. Signs the update manifest with the product's update signing key.
+4. Publishes the release for the selected channel.
+
+The shipped client checks:
+
+```http
+GET $KEYDECK_OTA_URL/v1/update-check?product=reorchestra&channel=stable&platform=windows-amd64&current=1.3.0
+```
+
+It must:
+
+- verify the manifest signature with the embedded update public key
+- compare the returned version using semver
+- download the short-lived URL
+- verify SHA-256
+- reject unsafe ZIP paths
+- stage the update, self-test, and roll back on failure
+- preserve user data
+
+Never put `KEYDECK_ADMIN_TOKEN` in the shipped client. OTA check/download endpoints are public; the admin token is only for publishing.
+
+## 11. OTA client
 
 Update base URL: `https://<ota-domain>/v1`.
 
@@ -287,7 +368,7 @@ GET /v1/update-check?product=reorchestra&channel=stable&platform=windows-amd64&c
 
 The response includes the release metadata, signed manifest, and download URL. Verify the manifest with the product's update public key, download, verify SHA-256, and only then install.
 
-## 11. Agent checklist
+## 12. Agent checklist
 
 Use this as the definition of done when adding a product, limit, or feature:
 
@@ -308,7 +389,7 @@ Use this as the definition of done when adding a product, limit, or feature:
 - [ ] README and client docs list the limits and features.
 - [ ] A PR is open; `main` is never pushed directly.
 
-## 12. Copy-paste prompt for a client agent
+## 13. Copy-paste prompt for a client agent
 
 ```text
 You are adding Keydeck licensing to <product>.
@@ -321,6 +402,8 @@ Read the Keydeck docs:
 Product slug: <slug>
 License API: https://<license-domain>/v1
 OTA API: https://<ota-domain>/v1
+Admin API: https://<admin-domain>/api
+Admin token: from the project .env (never commit it)
 License public key: <base64>
 Update public key: <base64>
 
@@ -340,14 +423,16 @@ Do:
 7. Add tests for missing limit, zero, at limit, above limit, disabled feature,
    expired, revoked, wrong product, and no activation.
 8. Do not log keys, tokens, cookies, or machine hashes.
-9. Open a PR with the evidence.
+9. Publish the first release with the scoped admin token, then verify OTA
+   update-check, manifest signature, SHA-256, and rollback.
+10. Open a PR with the evidence.
 
 Do not add pricing, billing, tiers, or a customer portal.
 Do not add a new key type without a server migration.
 Do not claim the client is uncrackable.
 ```
 
-## 13. Changing Keydeck itself
+## 14. Changing Keydeck itself
 
 If the task changes the server:
 
@@ -357,6 +442,6 @@ If the task changes the server:
 - Add a Postgres integration test for activation/expiry/revocation.
 - Update the admin UI for new first-class fields.
 - Update `PRD.md`, `AGENTS.md`, and this guide.
-- Open a PR; never push `main` directly.
+- Open a PR against `beta`; never push `main` or `beta` directly.
 
 If the task only adds a product-specific limit or feature, do not change the server schema. Add it through the admin data and enforce it in the client.
