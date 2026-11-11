@@ -42,7 +42,7 @@ Do not use `--no-verify`, force-push `main`, or rewrite shared history.
 
 ## Client agents
 
-If the task is to integrate Keydeck into another product, add a limit, or add a feature gate, follow [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) before changing code.
+If the task is to integrate Keydeck into another product, add a limit, or add a feature gate, follow [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) before changing code. Agents use a scoped bearer token from the project `.env`; never the admin password, TOTP seed, or session cookie.
 
 The short version:
 
@@ -52,6 +52,7 @@ The short version:
 - Enforce it in the client at the resource boundary.
 - Add tests for missing, zero, at-limit, above-limit, and disabled-feature states.
 - The server returns limits/features; it does not enforce product-specific ones.
+- Publish artifacts through the admin API with a `releases:write` token; the OTA client verifies the signed manifest and SHA-256.
 - Never add pricing, billing, or tiers.
 
 ## Repository map
