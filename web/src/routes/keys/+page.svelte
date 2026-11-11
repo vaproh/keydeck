@@ -135,7 +135,7 @@
 							</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan="6" class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
+						<TableRow><TableCell colspan={6} class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>

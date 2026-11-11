@@ -68,7 +68,7 @@
 							<TableCell class="text-right text-xs text-muted-foreground">{new Date(product.created_at).toLocaleDateString()}</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan="4" class="py-10 text-center text-sm text-muted-foreground">No products yet. Add the first one.</TableCell></TableRow>
+						<TableRow><TableCell colspan={4} class="py-10 text-center text-sm text-muted-foreground">No products yet. Add the first one.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>

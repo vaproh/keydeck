@@ -1,1 +1,2 @@
-// place files you want to import through the `#lib` alias in this folder.
+// Public library surface for the admin app.
+export { cn } from './utils';

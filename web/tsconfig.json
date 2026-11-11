@@ -6,7 +6,6 @@
 			"$app/types",
 			"node"
 		],
-		"baseUrl": ".",
 		"paths": {
 			"$lib": [
 				"./src/lib"

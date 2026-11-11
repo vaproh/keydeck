@@ -36,7 +36,7 @@
 						<TableCell class="max-w-64 truncate text-xs text-muted-foreground">{event.target || '—'}</TableCell>
 					</TableRow>
 				{:else}
-					<TableRow><TableCell colspan="4" class="py-10 text-center text-sm text-muted-foreground">No audit events yet.</TableCell></TableRow>
+					<TableRow><TableCell colspan={4} class="py-10 text-center text-sm text-muted-foreground">No audit events yet.</TableCell></TableRow>
 				{/each}
 			</TableBody>
 		</Table>

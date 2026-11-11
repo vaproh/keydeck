@@ -58,7 +58,7 @@
 					</div>
 					<div class="space-y-1.5">
 						<Label for="totp">Authenticator code</Label>
-						<Input id="totp" inputmode="numeric" bind:value={totp} autocomplete="one-time-code" maxlength="6" required />
+						<Input id="totp" inputmode="numeric" bind:value={totp} autocomplete="one-time-code" maxlength={6} required />
 					</div>
 					<div class="space-y-1.5">
 						<Label for="captcha">Human check · {captcha?.question ?? '…'}</Label>

@@ -46,7 +46,9 @@
 		"vite": "^8.3.8"
 	},
 	"dependencies": {
-		"motion": "^14.12.0"
+		"clsx": "^2.1.1",
+		"motion": "^14.12.0",
+		"tailwind-merge": "^3.7.0"
 	},
 	"packageManager": "pnpm@12.17.0",
 	"pnpm": {

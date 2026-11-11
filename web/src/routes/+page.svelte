@@ -109,7 +109,7 @@
 							<TableCell class="text-right text-xs text-muted-foreground">{when(row.expires_at)}</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan="4" class="py-8 text-center text-sm text-muted-foreground">Nothing expires soon.</TableCell></TableRow>
+						<TableRow><TableCell colspan={4} class="py-8 text-center text-sm text-muted-foreground">Nothing expires soon.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>

@@ -84,7 +84,7 @@
 							<TableCell class="text-right text-xs text-muted-foreground">{new Date(release.created_at).toLocaleDateString()}</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan="6" class="py-10 text-center text-sm text-muted-foreground">No releases published.</TableCell></TableRow>
+						<TableRow><TableCell colspan={6} class="py-10 text-center text-sm text-muted-foreground">No releases published.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>
