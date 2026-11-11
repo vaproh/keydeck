@@ -36,11 +36,13 @@ Postgres is the source of truth for products, keys, activations, releases, sessi
 
 - **Trial, timed, and lifetime keys** with server-authoritative clocks.
 - **Per-key limits and features** managed in the admin panel. No pricing or billing.
+- **Per-key holder names** so every key shows who or what it belongs to.
 - **Multi-product** by design. One deployment can serve every tool you ship.
 - **Trial protection**: starts on first activation, one activation, no grace.
 - **Lifetime keys** with no expiry but full revocation and heartbeat checks.
 - **Signed OTA manifests** with SHA-256, stable/beta channels, and short-lived download URLs.
-- **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, and IP allowlisting. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
+- **Scoped agent tokens** for project agents: product-limited, scope-limited, revocable, and shown once.
+- **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, IP allowlisting, seven-day sessions, and light/dark mode. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 - **Structured JSON logs** with request IDs. Keys, tokens, cookies, and bodies are never logged.
 - **Docker-only deployment** with Caddy TLS and Watchtower-based continuous deployment.
 
@@ -82,14 +84,18 @@ Caddy terminates TLS for all three. The admin host is restricted by `ADMIN_ALLOW
 
 ## Release flow
 
+`main` is stable; `beta` is the integration branch. Feature PRs target `beta`, and release managers promote `beta` to `main`. See [docs/RELEASING.md](docs/RELEASING.md).
+
 Every protected `v*` tag builds and publishes:
 
-1. Go tests and `go vet`.
+1. Go tests, race detector, and coverage gate.
 2. Frontend production build.
 3. Linux binary with the embedded frontend.
 4. Docker image at `ghcr.io/<owner>/keydeck`.
 5. GitHub release with automatically generated release notes.
 6. Self-contained VPS bundle containing `docker-compose.yml`, `Caddyfile`, `.env.example`, the compiled `keydeck` binary, the compiled frontend, and `Dockerfile`.
+
+Stable tags publish `latest`; beta tags publish only the pinned pre-release image, so a beta host does not drift onto stable.
 
 On the VPS, download the bundle once, fill `.env`, and run:
 
@@ -104,7 +110,7 @@ The stack includes Watchtower. When a new `latest` image is published, it pulls 
 - **Trial**: starts on first activation, one-time, one activation, zero grace.
 - **Timed**: starts on issue or first activation, configurable days, admin extendable.
 - **Lifetime**: no expiry, still revocable and heartbeat-checked.
-- Per-key `plan_name`, `limits`, `features`, `max_activations`, expiry, and notes.
+- Per-key `plan_name`, `holder_name`, `limits`, `features`, `max_activations`, expiry, and notes.
 - The server is the key clock. Clients use `server_now`, `expires_at`, and `remaining_seconds`; the local clock is never authoritative.
 - Signed Ed25519 leases bind the product, installation, plan, limits, and expiry.
 

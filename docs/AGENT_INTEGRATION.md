@@ -15,6 +15,35 @@ Keydeck is the authority. The client never decides validity.
 - The server does not enforce product-specific limits. The client does.
 - A limit is a product rule, not a security boundary against a patched client.
 
+## Agent access tokens
+
+Do not give a coding agent the admin password or TOTP seed. Create a scoped token in **Agent access** and put it in the client project's `.env`:
+
+```env
+KEYDECK_ADMIN_URL=https://admin.example.com
+KEYDECK_PRODUCT_SLUG=reorchestra
+KEYDECK_ADMIN_TOKEN=kd_admin_...
+```
+
+The agent sends it as a bearer token:
+
+```bash
+curl -fsS "$KEYDECK_ADMIN_URL/api/admin/products/$PRODUCT_ID/limits" \
+  -H "Authorization: Bearer $KEYDECK_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"key":"max_projects","label":"Maximum projects"}'
+```
+
+Rules:
+
+- Keep `.env` out of git.
+- Never ship the token in a desktop client.
+- Use one token per project or agent.
+- Grant only the scopes required: `products:read`, `products:write`, `licenses:read`, `licenses:write`, `releases:write`, `audit:read`.
+- Scope the token to the product whenever possible.
+- Bearer tokens do not use CSRF; do not send the session cookie.
+- Revoke a token from **Agent access** if it leaks.
+
 ## 1. Create the product
 
 In the admin panel:
@@ -48,7 +77,7 @@ POST /api/admin/products/{id}/features
 {"key":"warmup","label":"Account warming"}
 ```
 
-Admin routes require the admin session cookie and `x-csrf-token` for mutations. Prefer the admin UI for manual setup.
+Human admin routes require the session cookie and `x-csrf-token` for mutations. Agents should use a scoped bearer token instead.
 
 ## 2. Add a new limit
 

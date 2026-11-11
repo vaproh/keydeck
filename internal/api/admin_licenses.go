@@ -16,7 +16,13 @@ import (
 )
 
 func (a *App) listLicenses(w http.ResponseWriter, r *http.Request) {
+	if !a.authorize(w, r, "licenses:read", 0) {
+		return
+	}
 	productID, _ := parseInt(r.URL.Query().Get("product_id"))
+	if agent, ok := auth.AgentFrom(r.Context()); ok && agent.ProductID != 0 {
+		productID = agent.ProductID
+	}
 	if productID < 0 {
 		productID = 0
 	}
@@ -46,8 +52,12 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
+	if !a.authorize(w, r, "licenses:write", productID) {
+		return
+	}
 	var body struct {
 		PlanName           string          `json:"plan_name"`
+		HolderName         string          `json:"holder_name"`
 		KeyType            string          `json:"key_type"`
 		TrialMinutes       *int32          `json:"trial_minutes"`
 		ValidityDays       *int32          `json:"validity_days"`
@@ -114,6 +124,11 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	if body.PlanName == "" {
 		body.PlanName = strings.Title(body.KeyType)
 	}
+	body.HolderName = strings.TrimSpace(body.HolderName)
+	if len(body.HolderName) > 120 {
+		writeError(w, http.StatusBadRequest, "holder_name is too long")
+		return
+	}
 	limits := body.Limits
 	if len(limits) == 0 {
 		limits = json.RawMessage("{}")
@@ -124,7 +139,7 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	}
 	rawKey, hash, last4 := licensing.NewKey(keyRow.KeyPrefix)
 	row, err := a.q.CreateLicense(r.Context(), store.CreateLicenseParams{
-		ProductID: productID, KeyHash: hash, KeyLast4: last4, PlanName: body.PlanName,
+		ProductID: productID, KeyHash: hash, KeyLast4: last4, PlanName: body.PlanName, HolderName: body.HolderName,
 		KeyType: body.KeyType, TrialMinutes: body.TrialMinutes, ValidityDays: body.ValidityDays,
 		StartsOnActivation: starts, OneTimeActivation: oneTime, GraceSeconds: grace,
 		ConvertFrom: limits, ConvertFrom_2: features, ExpiresAt: pt(expiry),
@@ -150,6 +165,9 @@ func (a *App) getLicense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "license not found")
 		return
 	}
+	if !a.authorize(w, r, "licenses:read", row.ProductID) {
+		return
+	}
 	activations, _ := a.q.ListActivations(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]any{"license": licenseJSON(row), "activations": activations})
 }
@@ -165,8 +183,12 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "license not found")
 		return
 	}
+	if !a.authorize(w, r, "licenses:write", row.ProductID) {
+		return
+	}
 	var body struct {
 		PlanName       *string         `json:"plan_name"`
+		HolderName     *string         `json:"holder_name"`
 		Limits         json.RawMessage `json:"limits"`
 		Features       json.RawMessage `json:"features"`
 		MaxActivations *int32          `json:"max_activations"`
@@ -180,6 +202,13 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.PlanName != nil {
 		row.PlanName = *body.PlanName
+	}
+	if body.HolderName != nil {
+		row.HolderName = strings.TrimSpace(*body.HolderName)
+		if len(row.HolderName) > 120 {
+			writeError(w, http.StatusBadRequest, "holder_name is too long")
+			return
+		}
 	}
 	if len(body.Limits) > 0 {
 		row.LimitsJson = body.Limits
@@ -205,7 +234,8 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 		row.ExpiresAt = pt(t)
 	}
 	updated, err := a.q.UpdateLicense(r.Context(), store.UpdateLicenseParams{
-		ID: id, PlanName: row.PlanName, ConvertFrom: row.LimitsJson, ConvertFrom_2: row.FeaturesJson,
+		ID: id, PlanName: row.PlanName, HolderName: row.HolderName,
+		ConvertFrom: row.LimitsJson, ConvertFrom_2: row.FeaturesJson,
 		MaxActivations: row.MaxActivations, Notes: row.Notes, GraceSeconds: row.GraceSeconds, ExpiresAt: row.ExpiresAt,
 	})
 	if err != nil {
@@ -224,6 +254,14 @@ func (a *App) licenseAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := chi.URLParam(r, "action")
+	row, err := a.q.GetLicense(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "license not found")
+		return
+	}
+	if !a.authorize(w, r, "licenses:write", row.ProductID) {
+		return
+	}
 	session := auth.SessionFrom(r.Context())
 	switch action {
 	case "revoke":
@@ -239,11 +277,6 @@ func (a *App) licenseAction(w http.ResponseWriter, r *http.Request) {
 		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body) != nil || body.Days < 1 || body.Days > 3650 {
 			writeError(w, http.StatusBadRequest, "days must be between 1 and 3650")
-			return
-		}
-		row, err := a.q.GetLicense(r.Context(), id)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "license not found")
 			return
 		}
 		expiry := row.ExpiresAt.Time.Add(time.Duration(body.Days) * 24 * time.Hour)
@@ -268,7 +301,7 @@ func pt(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t.UTC(
 func licenseFromListRow(row store.ListLicensesRow) store.License {
 	return store.License{
 		ID: row.ID, ProductID: row.ProductID, KeyHash: row.KeyHash, KeyLast4: row.KeyLast4,
-		PlanName: row.PlanName, KeyType: row.KeyType, TrialMinutes: row.TrialMinutes,
+		PlanName: row.PlanName, HolderName: row.HolderName, KeyType: row.KeyType, TrialMinutes: row.TrialMinutes,
 		ValidityDays: row.ValidityDays, StartsOnActivation: row.StartsOnActivation,
 		OneTimeActivation: row.OneTimeActivation, GraceSeconds: row.GraceSeconds,
 		FirstActivatedAt: row.FirstActivatedAt, ActivationExpiresAt: row.ActivationExpiresAt,

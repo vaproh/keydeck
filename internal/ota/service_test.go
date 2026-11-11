@@ -1,10 +1,12 @@
 package ota
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/vaproh/keydeck/internal/config"
+	"github.com/vaproh/keydeck/internal/store"
 )
 
 func TestDownloadToken(t *testing.T) {
@@ -29,3 +31,22 @@ func TestSemver(t *testing.T) {
 }
 
 func configWithSecret(secret string) (c config.Config) { c.DownloadSecret = secret; return }
+
+func TestExpiredTokenAndArtifactBoundary(t *testing.T) {
+	dir := t.TempDir()
+	s := &Service{cfg: config.Config{DownloadSecret: "secret", ArtifactsDir: dir}, now: func() time.Time { return time.Unix(3000, 0) }}
+	token := s.token(7, time.Unix(2000, 0))
+	if _, ok := s.verifyToken(token); ok {
+		t.Fatal("expired token accepted")
+	}
+	release := storeRelease(filepath.Join(dir, "release.zip"))
+	if _, err := s.ArtifactPath(release); err != nil {
+		t.Fatalf("artifact inside root rejected: %v", err)
+	}
+	release = storeRelease(filepath.Join(dir, "..", "escape.zip"))
+	if _, err := s.ArtifactPath(release); err == nil {
+		t.Fatal("path traversal accepted")
+	}
+}
+
+func storeRelease(path string) store.Release { return store.Release{ArtifactPath: path} }

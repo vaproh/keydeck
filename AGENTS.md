@@ -4,7 +4,7 @@ Keydeck is an open-source, self-hosted license and OTA control plane for desktop
 
 ## Non-negotiables
 
-- **Never push directly to `main`.** Create a feature branch, commit there, push it, and open a pull request. Wait for required checks.
+- **Never push directly to `main` or `beta`.** Create a feature branch, commit there, push it, and open a pull request against `beta`. Wait for required checks.
 - **Never commit secrets.** No `.env`, signing keys, `DOWNLOAD_SECRET`, password hashes, TOTP secrets, database dumps, or customer keys.
 - **The server is the key clock.** Do not introduce client-clock validity checks, trusting the local clock, or client-controlled expiry.
 - **Trial keys have zero grace.** Do not add offline trial access.
@@ -15,7 +15,7 @@ Keydeck is an open-source, self-hosted license and OTA control plane for desktop
 ## Workflow
 
 1. Read the relevant issue or PRD.
-2. Create a branch: `feat/...`, `fix/...`, or `chore/...`.
+2. Branch from `beta` and open the PR against `beta`. Use `feat/...`, `fix/...`, or `chore/...`.
 3. Make the smallest complete change, including tests and docs.
 4. Run:
 
@@ -35,6 +35,8 @@ just audit
    - security impact
 7. Wait for `test` to pass. Do not merge your own PR without checking the diff.
 8. Delete the branch after merge.
+
+`main` is stable. Only release managers promote `beta` to `main` and create tags. See [docs/RELEASING.md](docs/RELEASING.md).
 
 Do not use `--no-verify`, force-push `main`, or rewrite shared history.
 
@@ -114,11 +116,13 @@ Migrations are additive and forward-only. Never edit an applied migration.
 
 ## Releases
 
-- Releases are created only from protected `v*` tags.
+- `main` is stable; `beta` is the integration branch.
+- Releases are created only from protected `v*` tags: stable on `main`, pre-release on `beta`.
 - The workflow runs tests, builds the frontend, builds `keydeck`, pushes the GHCR image, generates release notes automatically, and attaches a VPS bundle.
 - The VPS bundle must contain the compiled binary and frontend; the VPS must not need a Go or Node toolchain.
-- Watchtower pulls the new `latest` image and restarts the app container.
+- Watchtower pulls the new `latest` image for stable releases. Beta bundles pin the beta image.
 - Never move or reuse a published tag.
+- Agents never create release tags.
 
 ## UI direction
 
