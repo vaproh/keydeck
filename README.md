@@ -8,8 +8,18 @@
 
 <p align="center">
   <a href="https://github.com/vaproh/keydeck/actions/workflows/build.yml"><img alt="build" src="https://github.com/vaproh/keydeck/actions/workflows/build.yml/badge.svg" /></a>
-  <a href="https://github.com/vaproh/keydeck/blob/main/LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-123a2f" /></a>
   <a href="https://github.com/vaproh/keydeck/releases"><img alt="release" src="https://img.shields.io/github/v/release/vaproh/keydeck?color=d97745" /></a>
+  <a href="https://github.com/vaproh/keydeck/blob/main/LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-123a2f" /></a>
+  <a href="https://github.com/vaproh/keydeck/pkgs/container/keydeck"><img alt="GHCR" src="https://img.shields.io/badge/GHCR-keydeck-2496ED?logo=docker&logoColor=white" /></a>
+  <a href="https://github.com/vaproh/keydeck/pulls"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-123a2f" /></a>
+</p>
+<p align="center">
+  <img alt="Go 1.27" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white" />
+  <img alt="SvelteKit 3" src="https://img.shields.io/badge/SvelteKit-3-FF3E00?logo=svelte&logoColor=white" />
+  <img alt="Svelte 5" src="https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white" />
+  <img alt="Postgres 18" src="https://img.shields.io/badge/Postgres-18-4169E1?logo=postgresql&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+  <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-yes-123a2f" />
 </p>
 
 Keydeck is a self-hosted license server, OTA update service, and private admin panel for desktop software. One Go binary serves three isolated surfaces and embeds the compiled SvelteKit frontend.
@@ -118,7 +128,7 @@ Never commit `.env`, signing keys, the download secret, password hashes, TOTP se
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md). Changes go through a pull request; `main` is protected by required checks.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [agent integration guide](docs/AGENT_INTEGRATION.md). Changes go through a pull request; `main` is protected by required checks.
 
 ## Security
 

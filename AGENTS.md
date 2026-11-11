@@ -38,6 +38,20 @@ just audit
 
 Do not use `--no-verify`, force-push `main`, or rewrite shared history.
 
+## Client agents
+
+If the task is to integrate Keydeck into another product, add a limit, or add a feature gate, follow [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) before changing code.
+
+The short version:
+
+- A limit or feature is data, not a new table.
+- Add the definition in the product's admin page.
+- Add it to plan presets and issued keys.
+- Enforce it in the client at the resource boundary.
+- Add tests for missing, zero, at-limit, above-limit, and disabled-feature states.
+- The server returns limits/features; it does not enforce product-specific ones.
+- Never add pricing, billing, or tiers.
+
 ## Repository map
 
 ```text
