@@ -1,6 +1,6 @@
 # Contributing
 
-Keydeck accepts changes through pull requests only. `main` is protected.
+Keydeck accepts changes through pull requests only. `main` (stable) and `beta` (integration) are protected.
 
 ## Before you start
 
@@ -11,6 +11,8 @@ Keydeck accepts changes through pull requests only. `main` is protected.
 ## Branch and PR
 
 ```bash
+git switch beta
+git pull
 git switch -c feat/short-name
 # make the change
 just fmt
@@ -18,7 +20,7 @@ just test
 just lint
 just audit
 git push -u origin feat/short-name
-gh pr create --fill
+gh pr create --base beta --fill
 ```
 
 A PR should state:
@@ -28,7 +30,7 @@ A PR should state:
 - migrations or deployment impact
 - security impact
 
-Wait for the `test` check. Do not merge with failing checks.
+Wait for the `test` check. Do not merge with failing checks. Release managers promote `beta` to `main`; contributors do not tag releases.
 
 ## Development
 

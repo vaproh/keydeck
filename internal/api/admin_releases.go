@@ -20,7 +20,13 @@ import (
 )
 
 func (a *App) listReleases(w http.ResponseWriter, r *http.Request) {
+	if !a.authorize(w, r, "products:read", 0) {
+		return
+	}
 	productID, _ := parseInt(r.URL.Query().Get("product_id"))
+	if agent, ok := auth.AgentFrom(r.Context()); ok && agent.ProductID != 0 {
+		productID = agent.ProductID
+	}
 	rows, err := a.q.ListReleases(r.Context(), productID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load releases")
@@ -38,6 +44,9 @@ func (a *App) uploadRelease(w http.ResponseWriter, r *http.Request) {
 	productID, err := strconv.ParseInt(r.FormValue("product_id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "product is required")
+		return
+	}
+	if !a.authorize(w, r, "releases:write", productID) {
 		return
 	}
 	version := strings.TrimSpace(r.FormValue("version"))

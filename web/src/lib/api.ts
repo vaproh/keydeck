@@ -24,6 +24,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 		credentials: 'same-origin'
 	});
 	if (!response.ok) {
+		if (response.status === 401 && !window.location.pathname.endsWith('/login')) {
+			window.location.assign('/admin/login');
+		}
 		let message = `Request failed (${response.status})`;
 		try {
 			const body = await response.json();

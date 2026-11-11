@@ -57,13 +57,17 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 	raw, hash, last4 := NewKey("IT")
 	minutes := int32(15)
 	expires := pgtype.Timestamptz{Time: time.Now().UTC().Add(24 * time.Hour), Valid: true}
-	if _, err := store.New(pool).CreateLicense(ctx, store.CreateLicenseParams{
-		ProductID: product.ID, KeyHash: hash, KeyLast4: last4, PlanName: "Trial",
+	license, err := store.New(pool).CreateLicense(ctx, store.CreateLicenseParams{
+		ProductID: product.ID, KeyHash: hash, KeyLast4: last4, PlanName: "Trial", HolderName: "Test holder",
 		KeyType: "trial", TrialMinutes: &minutes, StartsOnActivation: true, OneTimeActivation: true,
 		GraceSeconds: 0, ConvertFrom: []byte(`{"max_accounts":3}`), ConvertFrom_2: []byte(`["warmup"]`),
 		ExpiresAt: expires, MaxActivations: 1,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if license.HolderName != "Test holder" {
+		t.Fatalf("holder name was not persisted: %q", license.HolderName)
 	}
 
 	service := New(pool, config.Config{})
