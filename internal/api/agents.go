@@ -12,14 +12,13 @@ import (
 	"github.com/vaproh/keydeck/internal/store"
 )
 
-var allowedScopes = map[string]bool{
-	"products:read":  true,
-	"products:write": true,
-	"licenses:read":  true,
-	"licenses:write": true,
-	"releases:write": true,
-	"audit:read":     true,
-}
+var allowedScopes = func() map[string]bool {
+	out := make(map[string]bool, len(auth.AllScopes))
+	for _, scope := range auth.AllScopes {
+		out[scope] = true
+	}
+	return out
+}()
 
 // authorize enforces agent scopes and product isolation. Human sessions pass through.
 func (a *App) authorize(w http.ResponseWriter, r *http.Request, scope string, productID int64) bool {
@@ -39,7 +38,7 @@ func (a *App) authorize(w http.ResponseWriter, r *http.Request, scope string, pr
 }
 
 func (a *App) humanOnly(w http.ResponseWriter, r *http.Request) bool {
-	if _, ok := auth.AgentFrom(r.Context()); ok {
+	if agent, ok := auth.AgentFrom(r.Context()); ok && !agent.Bootstrap {
 		writeError(w, http.StatusForbidden, "agent tokens cannot manage other tokens")
 		return false
 	}

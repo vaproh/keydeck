@@ -58,6 +58,7 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PlanName           string          `json:"plan_name"`
 		HolderName         string          `json:"holder_name"`
+		PresetID           int64           `json:"preset_id"`
 		KeyType            string          `json:"key_type"`
 		TrialMinutes       *int32          `json:"trial_minutes"`
 		ValidityDays       *int32          `json:"validity_days"`
@@ -84,6 +85,28 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusNotFound, "product not found")
 		return
+	}
+	if body.PresetID > 0 {
+		preset, err := a.q.GetPreset(r.Context(), store.GetPresetParams{ID: body.PresetID, ProductID: productID})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "plan preset not found")
+			return
+		}
+		if body.PlanName == "" {
+			body.PlanName = preset.Name
+		}
+		if len(body.Limits) == 0 {
+			body.Limits = preset.LimitsJson
+		}
+		if len(body.Features) == 0 {
+			body.Features = preset.FeaturesJson
+		}
+		if body.ValidityDays == nil && preset.ValidityDays != nil {
+			body.ValidityDays = preset.ValidityDays
+		}
+		if body.MaxActivations == 0 {
+			body.MaxActivations = preset.MaxActivations
+		}
 	}
 	keyRow, err := a.q.GetProductKey(r.Context(), productID)
 	if err != nil {

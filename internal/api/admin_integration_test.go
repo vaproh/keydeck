@@ -105,8 +105,18 @@ func TestAdminProductLicenseAndReleaseFlowWithPostgres(t *testing.T) {
 	if rec := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/features", id), map[string]string{"key": "warmup", "label": "Warmup"}); rec.Code != http.StatusCreated {
 		t.Fatalf("add feature: %d", rec.Code)
 	}
-	if rec := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/presets", id), map[string]any{"name": "Trial", "limits": map[string]int{"max_accounts": 3}, "features": []string{"warmup"}, "max_activations": 1}); rec.Code != http.StatusCreated {
-		t.Fatalf("add preset: %d %s", rec.Code, rec.Body.String())
+	presetRec := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/presets", id), map[string]any{"name": "Trial", "limits": map[string]int{"max_accounts": 3}, "features": []string{"warmup"}, "max_activations": 1})
+	if presetRec.Code != http.StatusCreated {
+		t.Fatalf("add preset: %d %s", presetRec.Code, presetRec.Body.String())
+	}
+	var preset struct {
+		ID int64 `json:"id"`
+	}
+	_ = json.Unmarshal(presetRec.Body.Bytes(), &preset)
+	if rec := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/licenses", id), map[string]any{
+		"preset_id": preset.ID, "key_type": "trial", "trial_minutes": 15,
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("create license from preset: %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = do(http.MethodPost, fmt.Sprintf("/admin/products/%d/licenses", id), map[string]any{

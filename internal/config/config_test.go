@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -70,5 +71,36 @@ func TestSigningKey(t *testing.T) {
 	t.Setenv("UPDATE_SIGNING_KEY_RE_ORCHESTRA", "not-base64")
 	if _, err := SigningKey("re-orchestra", "update"); err == nil {
 		t.Fatal("expected invalid base64 error")
+	}
+}
+
+func TestEnsureSigningKeysCreatesStableSeeds(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SIGNING_KEYS_DIR", dir)
+	t.Setenv("LICENSE_SIGNING_KEY_AUTO", "")
+	t.Setenv("UPDATE_SIGNING_KEY_AUTO", "")
+	licensePublic, updatePublic, err := EnsureSigningKeys("auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if licensePublic == "" || updatePublic == "" {
+		t.Fatal("public keys were not returned")
+	}
+	licenseSeed, err := SigningKey("auto", "LICENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateSeed, err := SigningKey("auto", "UPDATE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(licenseSeed) != 32 || len(updateSeed) != 32 {
+		t.Fatal("seeds were not 32 bytes")
+	}
+	if licensePublic != base64.StdEncoding.EncodeToString(ed25519.NewKeyFromSeed(licenseSeed).Public().(ed25519.PublicKey)) {
+		t.Fatal("public key does not match seed")
+	}
+	if _, _, err := EnsureSigningKeys("auto"); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -16,6 +16,9 @@ COPY . .
 COPY --from=web /src/web/build ./web/build
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keydeck ./cmd/keydeck
 
+FROM alpine:3.22 AS dirs
+RUN mkdir -p /data/artifacts /data/keys && chown -R 65532:65532 /data
+
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=gobuild /out/keydeck /keydeck
 EXPOSE 8080 8081 8082

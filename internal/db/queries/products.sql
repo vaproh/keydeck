@@ -56,3 +56,6 @@ RETURNING *;
 
 -- name: DeletePreset :exec
 DELETE FROM plan_presets WHERE id = $1 AND product_id = $2;
+
+-- name: GetPreset :one
+SELECT * FROM plan_presets WHERE id = $1 AND product_id = $2;
