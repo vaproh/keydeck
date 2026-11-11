@@ -42,9 +42,9 @@ Postgres is the source of truth for products, keys, activations, releases, sessi
 - **Lifetime keys** with no expiry but full revocation and heartbeat checks.
 - **Signed OTA manifests** with SHA-256, stable/beta channels, and short-lived download URLs.
 - **Scoped agent tokens** for project agents: product-limited, scope-limited, revocable, and shown once.
-- **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, IP allowlisting, seven-day sessions, and light/dark mode. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
+- **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, seven-day sessions, and light/dark mode. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 - **Structured JSON logs** with request IDs. Keys, tokens, cookies, and bodies are never logged.
-- **Docker-only deployment** with Caddy TLS and Watchtower-based continuous deployment.
+- **Docker-only deployment** with HAProxy/TierHive TLS and Watchtower-based continuous deployment.
 
 ## Stack
 
@@ -62,7 +62,7 @@ go run ./cmd/keydeck passwd               # put the hash in ADMIN_PASSWORD_HASH
 openssl rand -base64 48                  # BOOTSTRAP_ADMIN_TOKEN, optional
 ```
 
-Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD_SECRET`, set the three domains, and add the Cloudflare Turnstile site key, secret key, and admin hostname. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
+Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD_SECRET`, set `PUBLIC_BASE_URL`, and add the Cloudflare Turnstile site key, secret key, and admin hostname. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 
 A fresh database is **empty**: no products, keys, plans, releases, or sessions. Nothing is seeded. Use the bootstrap token once to create the first scoped agent token, then remove it from `.env` and restart. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md).
 
@@ -80,25 +80,25 @@ just up         # start the VPS stack
 
 ## Host health ports
 
-Keydeck publishes its three listeners for local health checks and HAProxy:
+Keydeck publishes its three listeners for HAProxy/TierHive health checks:
 
 ```text
-127.0.0.1:8080  license API
-127.0.0.1:8081  OTA API
-127.0.0.1:8082  admin SPA/API
+8080  license API
+8081  OTA API
+8082  admin SPA/API
 ```
 
-`KEYDECK_BIND_IP` controls the bind address. Keep it on `127.0.0.1` when HAProxy runs on the same host. Use a private interface or `0.0.0.0` behind a firewall if HAProxy is remote; never expose `8082` publicly without an IP allowlist.
+HAProxy/TierHive terminates TLS and routes the public domains to these ports. The admin port is protected by the application login, Turnstile, Argon2id, and TOTP; keep a network ACL in front of `8082` if possible.
 
 ## Domains
 
-Point three DNS records at the VPS:
+Point three DNS records at the VPS and route them through HAProxy/TierHive:
 
 - `license.example.com` → `:8080`
 - `ota.example.com` → `:8081`
 - `admin.example.com` → `:8082`
 
-Caddy terminates TLS for all three. The admin host is restricted by `ADMIN_ALLOW` (IP or CIDR). The license and OTA hosts are public.
+TLS terminates at HAProxy/TierHive. Keydeck speaks plain HTTP on those ports behind it. Restrict `8082` at the proxy or firewall; do not expose it openly.
 
 ## Release flow
 
@@ -111,7 +111,7 @@ Every protected `v*` tag builds and publishes:
 3. Linux binary with the embedded frontend.
 4. Docker image at `ghcr.io/<owner>/keydeck`.
 5. GitHub release with automatically generated release notes.
-6. Self-contained VPS bundle containing `docker-compose.yml`, `Caddyfile`, `.env.example`, the compiled `keydeck` binary, the compiled frontend, and `Dockerfile`.
+6. Self-contained VPS bundle containing `docker-compose.yml`, `.env.example`, the compiled `keydeck` binary, the compiled frontend, and `Dockerfile`.
 
 Stable tags publish `latest`; beta tags publish only the pinned pre-release image, so a beta host does not drift onto stable.
 
@@ -121,7 +121,7 @@ On the VPS, download the bundle once, fill `.env`, and run:
 docker compose up -d
 ```
 
-The stack includes Watchtower. When a new `latest` image is published, it pulls and restarts the app container. Postgres and Caddy keep running.
+The stack includes Watchtower. When a new `latest` image is published, it pulls and restarts the app container. Postgres and HAProxy/TierHive keep running.
 
 ## License behavior
 

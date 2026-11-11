@@ -131,7 +131,7 @@ The admin is a private control room, not a marketing site. Use the existing ston
 
 ## Security boundaries
 
-- Admin is private: TLS + `ADMIN_ALLOW`.
+- Admin is private: TLS at HAProxy/TierHive plus login, Turnstile, Argon2id, TOTP, and a network ACL where available.
 - License/OTA listeners are public but never expose admin routes.
 - Per-product license and update signing keys are separate.
 - Download tokens are short-lived and HMAC-signed.
