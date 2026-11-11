@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -26,7 +27,7 @@ import (
 )
 
 const cookieName = "desk_session"
-const sessionTTL = 12 * time.Hour
+const sessionTTL = 7 * 24 * time.Hour
 
 var (
 	ErrUnauthorized = errors.New("unauthorized")
@@ -52,6 +53,16 @@ type Session struct {
 	Actor string
 	CSRF  string
 }
+
+// Agent is a scoped machine identity. ProductID 0 means all products.
+type Agent struct {
+	TokenID   int64
+	Name      string
+	Scopes    map[string]bool
+	ProductID int64
+}
+
+func (a Agent) Has(scope string) bool { return a.Scopes[scope] }
 
 func New(cfg config.Config, q *store.Queries) *Service {
 	return &Service{cfg: cfg, q: q, captchas: map[string]captcha{}, fails: map[string][]time.Time{}}
@@ -133,6 +144,25 @@ func (s *Service) CookieName() string { return cookieName }
 
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if raw := bearer(r); strings.HasPrefix(raw, "kd_admin_") {
+			row, err := s.q.GetAdminTokenByHash(r.Context(), hash(raw))
+			if err != nil || row.RevokedAt.Valid || (row.ExpiresAt.Valid && !row.ExpiresAt.Time.After(time.Now())) {
+				writeAuthError(w, http.StatusUnauthorized)
+				return
+			}
+			var scopes []string
+			_ = json.Unmarshal(row.ScopesJson, &scopes)
+			agent := Agent{TokenID: row.ID, Name: row.Name, Scopes: map[string]bool{}, ProductID: row.ProductID}
+			for _, scope := range scopes {
+				agent.Scopes[scope] = true
+			}
+			_ = s.q.TouchAdminToken(r.Context(), row.ID)
+			ctx := context.WithValue(r.Context(), agentKey{}, agent)
+			session := Session{Actor: "agent:" + row.Name}
+			ctx = context.WithValue(ctx, sessionKey{}, session)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		cookie, err := r.Cookie(cookieName)
 		if err != nil {
 			writeAuthError(w, http.StatusUnauthorized)
@@ -159,6 +189,20 @@ func SessionFrom(ctx context.Context) Session {
 }
 
 type sessionKey struct{}
+type agentKey struct{}
+
+func AgentFrom(ctx context.Context) (Agent, bool) {
+	agent, ok := ctx.Value(agentKey{}).(Agent)
+	return agent, ok
+}
+
+func bearer(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(value) > 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return ""
+}
 
 func writeAuthError(w http.ResponseWriter, status int) {
 	w.Header().Set("content-type", "application/json")
@@ -262,3 +306,13 @@ func HashPassword(password string) (string, error) {
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", memory, iterations, parallelism,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
+
+// NewAdminToken returns the one-time display value and the values stored server-side.
+func NewAdminToken() (raw, hashed, hint string) {
+	raw = "kd_admin_" + randomToken(32)
+	hinted := raw[len(raw)-4:]
+	return raw, hash(raw), hinted
+}
+
+// HashToken exposes the same SHA-256 representation used by bearer auth.
+func HashToken(raw string) string { return hash(raw) }

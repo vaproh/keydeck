@@ -16,10 +16,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag is on main
+      - name: Verify tag is on the release branch
         run: |
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            git fetch origin beta
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/beta
+          else
+            git fetch origin main
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          fi
 
       - uses: actions/setup-go@v6
         with:
@@ -69,8 +74,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
             type=sha,prefix=sha-
 
       - name: Build and push image
@@ -93,7 +98,12 @@ jobs:
           cp dist/keydeck "release/bundle/keydeck"
           cp docker-compose.yml Caddyfile .env.example README.md LICENSE PRD.md AGENTS.md Dockerfile.release "release/bundle/"
           mv "release/bundle/Dockerfile.release" "release/bundle/Dockerfile"
-          sed -i "s#ghcr.io/vaproh/keydeck:latest#ghcr.io/${GITHUB_REPOSITORY}:latest#" "release/bundle/docker-compose.yml"
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            image_tag="${GITHUB_REF_NAME#v}"
+          else
+            image_tag="latest"
+          fi
+          sed -i "s#ghcr.io/vaproh/keydeck:latest#ghcr.io/${GITHUB_REPOSITORY}:${image_tag}#" "release/bundle/docker-compose.yml"
           sed -i '/^    build: \.$/d' "release/bundle/docker-compose.yml"
           tar -C release/bundle -czf "release/keydeck-${version}-linux-amd64.tar.gz" .
           cd release

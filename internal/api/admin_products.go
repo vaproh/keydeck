@@ -15,10 +15,21 @@ import (
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,39}$`)
 
 func (a *App) listProducts(w http.ResponseWriter, r *http.Request) {
+	if !a.authorize(w, r, "products:read", 0) {
+		return
+	}
 	products, err := a.q.ListProducts(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not load products")
 		return
+	}
+	if agent, ok := auth.AgentFrom(r.Context()); ok && agent.ProductID != 0 {
+		scoped, err := a.q.GetProduct(r.Context(), agent.ProductID)
+		if err != nil {
+			writeError(w, http.StatusForbidden, "token product is unavailable")
+			return
+		}
+		products = []store.Product{scoped}
 	}
 	out := make([]map[string]any, 0, len(products))
 	for _, p := range products {
@@ -28,6 +39,12 @@ func (a *App) listProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) createProduct(w http.ResponseWriter, r *http.Request) {
+	if agent, ok := auth.AgentFrom(r.Context()); ok {
+		if agent.ProductID != 0 || !a.authorize(w, r, "products:write", 0) {
+			writeError(w, http.StatusForbidden, "token cannot create products")
+			return
+		}
+	}
 	var body struct {
 		Slug             string `json:"slug"`
 		Name             string `json:"name"`
@@ -77,7 +94,7 @@ func (a *App) createProduct(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) getProduct(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:read", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -97,7 +114,7 @@ func (a *App) getProduct(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) updateProduct(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -125,7 +142,7 @@ func (a *App) updateProduct(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) addLimit(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -144,7 +161,7 @@ func (a *App) addLimit(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) deleteLimit(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -159,7 +176,7 @@ func (a *App) deleteLimit(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) addFeature(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -178,7 +195,7 @@ func (a *App) addFeature(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) deleteFeature(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -193,7 +210,7 @@ func (a *App) deleteFeature(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) createPreset(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}
@@ -230,7 +247,7 @@ func (a *App) createPreset(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) deletePreset(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)
-	if !ok {
+	if !ok || !a.authorize(w, r, "products:write", id) {
 		writeError(w, http.StatusBadRequest, "invalid product")
 		return
 	}

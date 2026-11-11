@@ -56,3 +56,8 @@ passwd:
 # Generate product signing keys (usage: just keygen reorchestra)
 keygen product:
     go run ./cmd/keydeck keygen {{product}}
+
+# Run tests with coverage (requires TEST_DATABASE_URL for integration tests)
+coverage:
+    go test -race -coverprofile=coverage.out -covermode=atomic ./...
+    go tool cover -func=coverage.out | tail -1

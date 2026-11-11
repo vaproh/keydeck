@@ -38,7 +38,8 @@ func productJSON(p store.Product) map[string]any {
 func licenseJSON(l store.License) map[string]any {
 	return map[string]any{
 		"id": l.ID, "product_id": l.ProductID, "key_last4": l.KeyLast4, "plan_name": l.PlanName,
-		"key_type": l.KeyType, "trial_minutes": l.TrialMinutes, "validity_days": l.ValidityDays,
+		"holder_name": l.HolderName,
+		"key_type":    l.KeyType, "trial_minutes": l.TrialMinutes, "validity_days": l.ValidityDays,
 		"starts_on_activation": l.StartsOnActivation, "one_time_activation": l.OneTimeActivation,
 		"grace_seconds": l.GraceSeconds, "first_activated_at": tsPtr(l.FirstActivatedAt),
 		"activation_expires_at": tsPtr(l.ActivationExpiresAt), "used_at": tsPtr(l.UsedAt),

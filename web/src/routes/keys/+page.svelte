@@ -12,7 +12,7 @@
 
 	type Product = { id: number; slug: string; name: string; status: string };
 	type License = {
-		id: number; product_id: number; key_last4: string; plan_name: string; key_type: string;
+		id: number; product_id: number; key_last4: string; plan_name: string; holder_name: string; key_type: string;
 		expires_at: string; activation_expires_at: string | null; status: string; max_activations: number;
 		activation_count: number; product_slug: string;
 	};
@@ -23,7 +23,7 @@
 	let rawKey = $state('');
 	let busy = $state(false);
 	let form = $state({
-		plan_name: 'Personal', key_type: 'timed', trial_minutes: 15, validity_days: 30,
+		plan_name: 'Personal', holder_name: '', key_type: 'timed', trial_minutes: 15, validity_days: 30,
 		starts_on_activation: true, one_time_activation: false, grace_seconds: 86400,
 		max_activations: 1, limits: '{"max_accounts": 25}', features: '["warmup"]', notes: ''
 	});
@@ -60,7 +60,7 @@
 		error = '';
 		try {
 			const body: Record<string, unknown> = {
-				plan_name: form.plan_name, key_type: form.key_type, starts_on_activation: form.starts_on_activation,
+				plan_name: form.plan_name, holder_name: form.holder_name, key_type: form.key_type, starts_on_activation: form.starts_on_activation,
 				one_time_activation: form.one_time_activation, grace_seconds: form.grace_seconds,
 				max_activations: form.max_activations, limits: JSON.parse(form.limits),
 				features: JSON.parse(form.features), notes: form.notes
@@ -117,11 +117,12 @@
 	<div class="grid gap-6 xl:grid-cols-[1fr_380px]">
 		<section class="rounded-xl border border-border bg-card/80">
 			<Table>
-				<TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Type</TableHead><TableHead>Key</TableHead><TableHead>Activations</TableHead><TableHead>Expires</TableHead><TableHead></TableHead></TableRow></TableHeader>
+				<TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Assigned to</TableHead><TableHead>Type</TableHead><TableHead>Key</TableHead><TableHead>Activations</TableHead><TableHead>Expires</TableHead><TableHead></TableHead></TableRow></TableHeader>
 				<TableBody>
 					{#each licenses as row (row.id)}
 						<TableRow>
 							<TableCell class="font-medium">{row.plan_name}</TableCell>
+							<TableCell class="text-xs">{#if row.holder_name}{row.holder_name}{:else}<span class="text-muted-foreground">Unassigned</span>{/if}</TableCell>
 							<TableCell><Badge variant="outline">{row.key_type}</Badge></TableCell>
 							<TableCell class="font-mono text-xs text-muted-foreground">•••• {row.key_last4}</TableCell>
 							<TableCell class="text-xs">{row.activation_count}/{row.max_activations}</TableCell>
@@ -135,7 +136,7 @@
 							</TableCell>
 						</TableRow>
 					{:else}
-						<TableRow><TableCell colspan={6} class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
+						<TableRow><TableCell colspan={7} class="py-10 text-center text-sm text-muted-foreground">No keys for this product yet.</TableCell></TableRow>
 					{/each}
 				</TableBody>
 			</Table>
@@ -146,6 +147,7 @@
 			<CardContent>
 				<form class="space-y-3" onsubmit={issue}>
 					<div class="space-y-1.5"><Label for="plan">Plan name</Label><Input id="plan" bind:value={form.plan_name} required /></div>
+					<div class="space-y-1.5"><Label for="holder">Assigned to</Label><Input id="holder" bind:value={form.holder_name} placeholder="Customer or machine name" maxlength={120} /></div>
 					<div class="space-y-1.5"><Label for="type">Type</Label>
 						<select id="type" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" bind:value={form.key_type}>
 							<option value="timed">Timed</option><option value="trial">Trial</option><option value="lifetime">Lifetime</option>

@@ -5,8 +5,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Toaster } from '#lib/components/ui/sonner';
+	import { ModeWatcher, mode, toggleMode } from 'mode-watcher';
 	import { me, logout, type Session } from '#lib/api';
-	import { LayoutDashboard, Boxes, KeyRound, RadioTower, ScrollText, LogOut, ArrowUpRight } from '@lucide/svelte';
+	import { LayoutDashboard, Boxes, KeyRound, RadioTower, ScrollText, LogOut, ArrowUpRight, Moon, Sun, ShieldCheck } from '@lucide/svelte';
 
 	let { children } = $props();
 	let session = $state<Session | null>(null);
@@ -17,10 +18,11 @@
 		{ href: '/products', label: 'Products', icon: Boxes },
 		{ href: '/keys', label: 'Keys', icon: KeyRound },
 		{ href: '/releases', label: 'Releases', icon: RadioTower },
+		{ href: '/access', label: 'Agent access', icon: ShieldCheck },
 		{ href: '/audit', label: 'Audit', icon: ScrollText }
 	];
 
-	const isLogin = $derived(page.url.pathname.endsWith('/login'));
+	const isLogin = $derived(page.url.pathname.includes('/login'));
 
 	onMount(async () => {
 		if (isLogin) {
@@ -44,6 +46,8 @@
 		}
 	}
 </script>
+
+<ModeWatcher defaultMode="system" />
 
 <svelte:head>
 	<title>Keydeck · license control</title>
@@ -93,6 +97,19 @@
 			<header class="flex h-16 items-center justify-between border-b border-border px-5 lg:px-8">
 				<a href="/admin" class="text-sm font-medium text-muted-foreground hover:text-foreground">Control room</a>
 				<div class="flex items-center gap-3 text-xs text-muted-foreground">
+					<button
+						type="button"
+						onclick={toggleMode}
+						class="inline-flex size-8 items-center justify-center rounded-md border border-border text-foreground hover:bg-muted"
+						aria-label="Toggle color mode"
+						title="Toggle color mode"
+					>
+						{#if mode.current === 'dark'}
+							<Sun class="size-4" />
+						{:else}
+							<Moon class="size-4" />
+						{/if}
+					</button>
 					<span class="hidden sm:inline">server clock · UTC</span>
 					<a href="/admin/keys" class="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-foreground hover:bg-muted">
 						Issue a key <ArrowUpRight class="size-3.5" />

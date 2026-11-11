@@ -12,6 +12,10 @@ func (a *App) AdminRouter() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(a.auth.Middleware)
 		r.Route("/admin", func(r chi.Router) {
+			r.Get("/tokens", a.listAdminTokens)
+			r.Post("/tokens", a.createAdminToken)
+			r.Post("/tokens/{id}/revoke", a.revokeAdminToken)
+
 			r.Get("/stats", a.stats)
 			r.Get("/products", a.listProducts)
 			r.Post("/products", a.createProduct)

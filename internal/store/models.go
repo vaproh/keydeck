@@ -28,6 +28,19 @@ type AdminSession struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 }
 
+type AdminToken struct {
+	ID         int64              `json:"id"`
+	Name       string             `json:"name"`
+	TokenHash  string             `json:"token_hash"`
+	TokenHint  string             `json:"token_hint"`
+	ScopesJson []byte             `json:"scopes_json"`
+	ProductID  int64              `json:"product_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type AuditEvent struct {
 	ID        int64              `json:"id"`
 	ProductID *int64             `json:"product_id"`
@@ -60,6 +73,7 @@ type License struct {
 	Status              string             `json:"status"`
 	Notes               string             `json:"notes"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	HolderName          string             `json:"holder_name"`
 }
 
 type PlanPreset struct {

@@ -16,15 +16,17 @@ SELECT * FROM licenses WHERE key_hash = $1;
 
 -- name: CreateLicense :one
 INSERT INTO licenses (
-    product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days,
+    product_id, key_hash, key_last4, plan_name, holder_name, key_type, trial_minutes, validity_days,
     starts_on_activation, one_time_activation, grace_seconds, limits_json, features_json,
     expires_at, max_activations, notes
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, convert_from($11, 'UTF8')::jsonb, convert_from($12, 'UTF8')::jsonb, $13, $14, $15)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, convert_from($12, 'UTF8')::jsonb, convert_from($13, 'UTF8')::jsonb, $14, $15, $16)
 RETURNING *;
 
 -- name: UpdateLicense :one
-UPDATE licenses SET plan_name = $2, limits_json = convert_from($3, 'UTF8')::jsonb,
-    features_json = convert_from($4, 'UTF8')::jsonb, max_activations = $5, notes = $6, grace_seconds = $7, expires_at = $8
+UPDATE licenses SET plan_name = $2, holder_name = $3,
+    limits_json = convert_from($4, 'UTF8')::jsonb,
+    features_json = convert_from($5, 'UTF8')::jsonb,
+    max_activations = $6, notes = $7, grace_seconds = $8, expires_at = $9
 WHERE id = $1 RETURNING *;
 
 -- name: RevokeLicense :exec
