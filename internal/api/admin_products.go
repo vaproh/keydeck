@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/config"
 	"github.com/vaproh/keydeck/internal/store"
 )
 
@@ -62,15 +63,18 @@ func (a *App) createProduct(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "slug and name are required")
 		return
 	}
-	if body.LicensePublicKey == "" {
-		body.LicensePublicKey = publicFromEnv(body.Slug, "LICENSE")
-	}
-	if body.UpdatePublicKey == "" {
-		body.UpdatePublicKey = publicFromEnv(body.Slug, "UPDATE")
-	}
 	if body.LicensePublicKey == "" || body.UpdatePublicKey == "" {
-		writeError(w, http.StatusBadRequest, "public signing keys are required")
-		return
+		licensePublic, updatePublic, err := config.EnsureSigningKeys(body.Slug)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not generate signing keys")
+			return
+		}
+		if body.LicensePublicKey == "" {
+			body.LicensePublicKey = licensePublic
+		}
+		if body.UpdatePublicKey == "" {
+			body.UpdatePublicKey = updatePublic
+		}
 	}
 	if body.KeyPrefix == "" {
 		body.KeyPrefix = strings.ToUpper(body.Slug)

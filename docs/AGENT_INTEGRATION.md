@@ -52,7 +52,7 @@ In the admin panel:
 
 1. Create a product with a stable lowercase slug, e.g. `reorchestra`.
 2. Register its key prefix, e.g. `REO`.
-3. Register the product's license public key and update public key.
+3. Omit the public keys and Keydeck generates the license and update signing keys server-side; or register existing public keys.
 4. Add the product limits.
 5. Add the product features.
 6. Create a plan preset for each common shape.
@@ -65,8 +65,6 @@ POST /api/admin/products
 {
   "slug": "reorchestra",
   "name": "ReOrchestra",
-  "license_public_key": "<base64 ed25519 public key>",
-  "update_public_key": "<base64 ed25519 public key>",
   "key_prefix": "REO"
 }
 ```

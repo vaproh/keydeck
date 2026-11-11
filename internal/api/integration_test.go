@@ -54,6 +54,7 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM admin_sessions WHERE id = $1`, auth.HashToken(rawSession)) })
 
+	t.Setenv("SIGNING_KEYS_DIR", t.TempDir())
 	app := New(config.Config{AdminActor: "operator"}, pool)
 	router := app.AdminRouter()
 	do := func(method, path, csrf string, body any, bearer string) *httptest.ResponseRecorder {
@@ -81,6 +82,24 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 
 	if rec := do(http.MethodGet, "/admin/products", "", nil, ""); rec.Code != http.StatusOK {
 		t.Fatalf("list products: %d", rec.Code)
+	}
+	autoSlug := slug + "-auto"
+	recAuto := do(http.MethodPost, "/admin/products", "csrf", map[string]string{"slug": autoSlug, "name": "Auto keys"}, "")
+	if recAuto.Code != http.StatusCreated {
+		t.Fatalf("auto product create: %d %s", recAuto.Code, recAuto.Body.String())
+	}
+	var autoProduct struct {
+		Product struct {
+			ID int64 `json:"id"`
+		} `json:"product"`
+	}
+	if err := json.Unmarshal(recAuto.Body.Bytes(), &autoProduct); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM products WHERE id = $1`, autoProduct.Product.ID) })
+	recKey := do(http.MethodGet, fmt.Sprintf("/admin/products/%d", autoProduct.Product.ID), "", nil, "")
+	if recKey.Code != http.StatusOK {
+		t.Fatalf("auto product detail: %d", recKey.Code)
 	}
 	rec := do(http.MethodPost, "/admin/tokens", "csrf", map[string]any{
 		"name": "agent-test", "scopes": []string{"products:write"}, "product_id": product.ID, "expires_days": 1,

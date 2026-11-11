@@ -66,13 +66,9 @@ Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD
 
 A fresh database is **empty**: no products, keys, plans, releases, or sessions. Nothing is seeded. Use the bootstrap token once to create the first scoped agent token, then remove it from `.env` and restart. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md).
 
-The product signing seeds are the one server-side secret that cannot be created through the admin API. After creating the product, generate them and add them to `.env`:
+Creating a product through the admin API generates its license and update signing keys on the server and stores them under `SIGNING_KEYS_DIR` (`/data/keys` in Docker). Only the public keys are registered. Set the env overrides only if you want to manage the seeds yourself.
 
-```bash
-go run ./cmd/keydeck keygen <product-slug>
-```
-
-Register the printed public keys on the product, then restart the stack.
+Back up the `signing_keys` Docker volume; losing it makes existing leases and OTA manifests unverifiable.
 
 ```bash
 just test       # Go tests, including Postgres integration when TEST_DATABASE_URL is set
