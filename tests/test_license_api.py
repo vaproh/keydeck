@@ -40,6 +40,8 @@ def env(tmp_path_factory):
     os.environ["LICENSE_DOWNLOAD_SECRET"] = "test-secret"
     os.environ["ADMIN_SERVICE_TOKEN"] = "ci-service-token"
     os.environ["ADMIN_COOKIE_SECURE"] = "0"
+    os.environ["PUBLIC_BASE_URL"] = "https://license.test"
+    os.environ["LICENSE_ARTIFACTS_DIR"] = str(db.parent / "artifacts")
     return db
 
 
@@ -343,52 +345,225 @@ def test_unknown_and_expired_keys_are_rejected(admin_app, public):
 
 
 def test_service_token_publishes_releases_only(admin_app, public):
-    from lsapp.crypto import product_signing_key, verify_lease
+    import hashlib
+
+    from lsapp.crypto import product_signing_key, public_key_of
+    from app.modules.ota import verify_manifest
 
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     csrf = login(admin)
     make_product(admin, csrf)
 
-    payload = {
+    payload = b"PKzip-bytes"
+    form = {
         "version": "1.2.0",
         "channel": "stable",
         "platform": "windows",
-        "sha256": "a" * 64,
-        "artifact_path": "artifacts/reorchestra/1.2.0/app.zip",
+        "min_version": "1.0.0",
+        "mandatory": "false",
+        "security": "false",
+        "notes": "ci",
+        "sha256": hashlib.sha256(payload).hexdigest(),
     }
-    denied = admin.post("/v1/admin/products/reorchestra/releases", json=payload)
-    assert denied.status_code == 401
+    files = {"artifact": ("app.zip", payload, "application/zip")}
+    url = "/v1/admin/products/reorchestra/releases"
 
+    assert admin.post(url, data=form, files=files).status_code == 401
     # A human session cookie must not authenticate the CI endpoint.
-    with_cookie = admin.post("/v1/admin/products/reorchestra/releases", json=payload)
-    assert with_cookie.status_code == 401
+    assert (
+        admin.post(url, data=form, files=files, cookies=admin.cookies).status_code == 401
+    )
 
     created = admin.post(
-        "/v1/admin/products/reorchestra/releases",
-        json=payload,
-        headers={"X-Service-Token": "ci-service-token"},
+        url, data=form, files=files, headers={"X-Service-Token": "ci-service-token"}
     )
-    assert created.status_code == 200
+    assert created.status_code == 200, created.text
     assert created.json()["status"] == "published"
 
-    from lsapp.db import SessionLocal
-    from lsapp.models import Release
-
-    db = SessionLocal()
-    try:
-        row = db.query(Release).order_by(Release.id.desc()).first()
-        claims = verify_lease(
-            row.manifest_signature,
-            __import__("lsapp.crypto", fromlist=["public_key_of"]).public_key_of(
-                product_signing_key("reorchestra", "update")
-            ),
-        )
-        assert claims["version"] == "1.2.0"
-        assert claims["product"] == "reorchestra"
-    finally:
-        db.close()
+    check = public.get(
+        "/v1/update-check",
+        params={"product": "reorchestra", "channel": "stable", "current": "1.0.0"},
+    ).json()
+    verify_manifest(
+        check["manifest"],
+        check["signature"],
+        public_key_of(product_signing_key("reorchestra", "update")),
+    )
+    assert check["manifest"]["version"] == "1.2.0"
+    assert check["manifest"]["product"] == "reorchestra"
 
 
 def test_public_app_has_no_admin_routes(public):
     assert public.get("/v1/admin/products").status_code == 404
     assert public.get("/admin").status_code == 404
+
+
+# ------------------------------------------------------- product scoping (I3)
+
+
+def _activate(public, key, product="reorchestra", installation=HASH):
+    return public.post(
+        "/v1/activate",
+        json={
+            "key": key,
+            "installation_hash": installation,
+            "machine_hash": "b" * 64,
+            "app_version": "1.0.0",
+            "product": product,
+        },
+    )
+
+
+def test_activation_is_product_scoped(admin_app):
+    from lsapp.crypto import product_signing_key, verify_lease, public_key_of
+    from lsapp.api_public import app as public_app
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(admin, csrf, product_id)
+    public = TestClient(public_app)
+
+    ok = _activate(public, key)
+    assert ok.status_code == 200, ok.text
+    claims = verify_lease(
+        ok.json()["lease"],
+        public_key_of(product_signing_key("reorchestra", "license")),
+    )
+    assert claims["product"] == "reorchestra"
+
+    wrong = _activate(public, key, product="other-app")
+    assert wrong.status_code == 403
+    assert "another product" in wrong.json()["detail"]
+
+
+def test_activation_rejects_a_key_from_another_product(admin_app):
+    from lsapp.api_public import app as public_app
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+    other_id = make_product(admin, csrf, slug="other-app")
+    other_key = make_license(admin, csrf, other_id)
+
+    public = TestClient(public_app)
+    assert _activate(public, other_key, product="reorchestra").status_code == 403
+    assert _activate(public, other_key, product="other-app").status_code == 200
+
+
+# -------------------------------------------------------------- releases (I3)
+
+
+def _upload(public_base, slug="reorchestra", version="1.2.0", channel="stable", payload=b"PKzip", digest=None, token="ci-service-token"):
+    import hashlib
+
+    from lsapp.api_admin import app as admin_app
+
+    digest = digest or hashlib.sha256(payload).hexdigest()
+    return TestClient(admin_app).post(
+        f"/v1/admin/products/{slug}/releases",
+        headers={"X-Service-Token": token} if token else {},
+        data={
+            "version": version,
+            "channel": channel,
+            "platform": "windows",
+            "min_version": "1.0.0",
+            "mandatory": "false",
+            "security": "false",
+            "notes": "automated",
+            "sha256": digest,
+        },
+        files={"artifact": ("app.zip", payload, "application/zip")},
+    )
+
+
+def test_release_upload_signs_a_canonical_manifest(admin_app):
+    import json
+
+    from lsapp.crypto import public_key_of, product_signing_key
+    from app.modules.ota import verify_manifest
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+
+    response = _upload(None)
+    assert response.status_code == 200, response.text
+
+    public = TestClient(__import__("lsapp.api_public", fromlist=["app"]).app)
+    check = public.get(
+        "/v1/update-check",
+        params={"product": "reorchestra", "channel": "stable", "current": "1.0.0"},
+    ).json()
+    assert check["available"] is True
+    manifest = check["manifest"]
+    assert manifest["version"] == "1.2.0"
+    assert check["download_url"].startswith("https://license.test/v1/download/")
+    verify_manifest(
+        manifest,
+        check["signature"],
+        public_key_of(product_signing_key("reorchestra", "update")),
+    )
+    assert json.dumps(manifest, sort_keys=True)  # canonical-safe
+
+
+def test_release_upload_rejects_a_checksum_mismatch(admin_app, tmp_path):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+    response = _upload(None, version="1.3.0", digest="0" * 64)
+    assert response.status_code == 400
+    assert "Checksum" in response.json()["detail"]
+    assert not (tmp_path / "x").exists()
+
+
+def test_download_returns_zip_bytes_and_checks_token(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+    _upload(None, version="1.4.0", payload=b"PK\x03\x04data")
+
+    public = TestClient(__import__("lsapp.api_public", fromlist=["app"]).app)
+    check = public.get(
+        "/v1/update-check", params={"product": "reorchestra", "current": "1.0.0"}
+    ).json()
+    url = check["download_url"].replace("https://license.test", "")
+
+    good = public.get(url)
+    assert good.status_code == 200
+    assert good.headers["content-type"] == "application/zip"
+    assert good.content == b"PK\x03\x04data"
+    assert good.headers["x-checksum-sha256"]
+
+    assert public.get(url + "&product=other-app").status_code == 403
+    expired = url.split("&exp=")[0] + "&exp=1&product=reorchestra"
+    assert public.get(expired).status_code == 403
+
+
+def test_release_upload_requires_the_service_token(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+    assert _upload(None, token="").status_code == 401
+    assert _upload(None, token="wrong").status_code == 401
+
+
+def test_release_upload_is_idempotent(admin_app):
+    from lsapp.db import SessionLocal
+    from lsapp.models import Release
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    make_product(admin, csrf)
+
+    first = _upload(None, version="1.5.0")
+    second = _upload(None, version="1.5.0")
+    assert first.status_code == second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+
+    db = SessionLocal()
+    try:
+        rows = db.query(Release).filter(Release.version == "1.5.0").all()
+    finally:
+        db.close()
+    assert len(rows) == 1

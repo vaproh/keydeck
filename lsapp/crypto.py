@@ -79,12 +79,28 @@ def verify_lease(token: str, public_key: str) -> dict:
     return json.loads(b64decode(payload))
 
 
-def lease_claims(license_row, installation_hash: str, limits: dict, features: list[str]) -> dict:
+def canonical_json(payload: dict) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def sign_manifest(payload: dict, key: Ed25519PrivateKey) -> str:
+    """Sign the canonical body itself so clients can rebuild it byte-for-byte."""
+    raw = canonical_json(payload).encode()
+    return f"{b64encode(raw)}.{b64encode(key.sign(raw))}"
+
+
+def lease_claims(
+    license_row,
+    installation_hash: str,
+    limits: dict,
+    features: list[str],
+    product_slug: str = "",
+) -> dict:
     now = datetime.now(UTC)
     expires = min(license_row.expires_at.replace(tzinfo=UTC), now + timedelta(hours=LEASE_HOURS))
     grace_hours = int(os.getenv("LICENSE_OFFLINE_GRACE_HOURS", "24"))
     return {
-        "product": license_row.product.slug if hasattr(license_row, "product") else "",
+        "product": product_slug,
         "license_id": license_row.id,
         "plan_name": license_row.plan_name,
         "limits": limits,

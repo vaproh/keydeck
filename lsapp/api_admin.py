@@ -8,6 +8,7 @@ that is accepted only for release publishing.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import hashlib
 import json
 import os
 import secrets
@@ -17,19 +18,29 @@ from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from .crypto import (
-    make_lease,
     new_key,
     product_signing_env,
     product_signing_key,
     public_key_of,
     sha256_hex,
+    sign_manifest,
 )
 from .db import get_db, init_db
 from .models import Activation, AuditEvent, License, Product, ProductKey, Release
@@ -395,49 +406,128 @@ class ReleaseRequest(BaseModel):
     notes: str = ""
 
 
-def _publish_release(db: DbSession, product: Product, request: ReleaseRequest, actor: str) -> Release:
-    manifest = {
+ARTIFACTS_DIR = Path(os.getenv("LICENSE_ARTIFACTS_DIR", "artifacts"))
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+def _artifact_target(slug: str, version: str) -> Path:
+    target = ARTIFACTS_DIR / slug / version / "app.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _manifest_for(product: Product, row: Release, base_url: str = "") -> dict:
+    return {
         "product": product.slug,
-        "version": request.version,
-        "channel": request.channel,
-        "platform": request.platform,
-        "mandatory": request.mandatory,
-        "security": request.security,
-        "sha256": request.sha256,
-        "notes": request.notes,
+        "version": row.version,
+        "channel": row.channel,
+        "platform": row.platform,
+        "min_version": row.min_version,
+        "mandatory": row.mandatory,
+        "security": row.security,
+        "sha256": row.sha256,
+        "notes": row.notes,
     }
-    signature = make_lease(manifest, product_signing_key(product.slug, "update"))
-    row = Release(
-        product_id=product.id,
-        version=request.version,
-        channel=request.channel,
-        platform=request.platform,
-        sha256=request.sha256,
-        artifact_path=request.artifact_path,
-        mandatory=request.mandatory,
-        security=request.security,
-        notes=request.notes,
-        manifest_json=json.dumps(manifest),
-        manifest_signature=signature,
-        status="published",
+
+
+def _publish_release(
+    db: DbSession,
+    product: Product,
+    *,
+    version: str,
+    channel: str,
+    platform: str = "windows",
+    min_version: str = "0.0.0",
+    mandatory: bool = False,
+    security: bool = False,
+    notes: str = "",
+    artifact_path: str,
+    sha256: str,
+    actor: str,
+) -> Release:
+    """Create or replace one release row, then sign its canonical manifest."""
+    row = (
+        db.query(Release)
+        .filter(
+            Release.product_id == product.id,
+            Release.version == version,
+            Release.channel == channel,
+        )
+        .first()
     )
-    db.add(row)
+    if row is None:
+        row = Release(product_id=product.id, version=version, channel=channel)
+        db.add(row)
+    row.platform = platform
+    row.min_version = min_version
+    row.mandatory = mandatory
+    row.security = security
+    row.notes = notes
+    row.artifact_path = artifact_path
+    row.sha256 = sha256
+    row.status = "published"
     db.commit()
-    _audit(db, "release.publish", f"{product.slug} {request.version}", product.id, actor=actor)
+
+    manifest = _manifest_for(product, row, PUBLIC_BASE_URL)
+    row.manifest_json = json.dumps(manifest, sort_keys=True)
+    row.manifest_signature = sign_manifest(
+        manifest, product_signing_key(product.slug, "update")
+    )
+    db.commit()
+    _audit(db, "release.publish", f"{product.slug} {version}", product.id, actor=actor)
     return row
 
 
 @app.post("/v1/admin/products/{slug}/releases")
-def publish_release(
+async def publish_release(
     slug: str,
-    request: ReleaseRequest,
+    version: str = Form(...),
+    channel: str = Form("stable"),
+    platform: str = Form("windows"),
+    min_version: str = Form("0.0.0"),
+    mandatory: bool = Form(False),
+    security: bool = Form(False),
+    notes: str = Form(""),
+    sha256: str = Form(""),
+    artifact: UploadFile = File(...),
     x_service_token: str | None = Header(default=None),
     db: DbSession = Depends(get_db),
 ):
-    """CI-only path: the service token cannot be used anywhere else."""
+    """CI-only path: multipart upload, service token, no human session."""
     _require_service_token(x_service_token, ALLOWED_SERVICE_SCOPE)
     product = db.query(Product).filter(Product.slug == slug).first()
     if not product:
         raise HTTPException(status_code=404, detail="Unknown product")
-    row = _publish_release(db, product, request, actor="ci")
-    return {"id": row.id, "version": row.version, "status": row.status}
+
+    target = _artifact_target(slug, version)
+    digest = hashlib.sha256()
+    with target.open("wb") as handle:
+        while chunk := await artifact.read(1024 * 256):
+            digest.update(chunk)
+            handle.write(chunk)
+    actual = digest.hexdigest()
+    if sha256 and not secrets.compare_digest(sha256.lower(), actual):
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Checksum mismatch")
+
+    row = _publish_release(
+        db,
+        product,
+        version=version,
+        channel=channel,
+        platform=platform,
+        min_version=min_version,
+        mandatory=mandatory,
+        security=security,
+        notes=notes,
+        artifact_path=str(target),
+        sha256=actual,
+        actor="ci",
+    )
+    return {
+        "id": row.id,
+        "version": row.version,
+        "channel": row.channel,
+        "sha256": row.sha256,
+        "status": row.status,
+    }
