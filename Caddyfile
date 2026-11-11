@@ -1,0 +1,8 @@
+license.example.com {
+	reverse_proxy license-api:8000
+}
+
+admin.example.com {
+	# Keep this host private: VPN or an allowlist in your firewall as well.
+	reverse_proxy license-admin:8000
+}
