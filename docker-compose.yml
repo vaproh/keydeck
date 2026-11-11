@@ -83,6 +83,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       WATCHTOWER_CLEANUP: "true"
+      DOCKER_API_VERSION: "${DOCKER_API_VERSION:-1.44}"
 
 volumes:
   pgdata:
