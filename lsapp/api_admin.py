@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .crypto import key_from_env, new_key, public_key_of, sha256_hex
 from .db import get_db
-from .models import AuditEvent, License, Product, ProductKey
+from .models import AuditEvent, License, Product, ProductKey, Release
 
 app = FastAPI(title="ReOrchestra license admin", version="1.0")
 _hasher = PasswordHasher()
@@ -176,6 +176,57 @@ def license_action(
     db.commit()
     _audit(db, f"license.{action}", str(license_id), row.product_id)
     return {"id": row.id, "status": row.status, "expires_at": row.expires_at}
+
+
+class ReleaseRequest(BaseModel):
+    version: str = Field(min_length=5, max_length=24)
+    channel: str = "stable"
+    platform: str = "windows"
+    sha256: str = Field(min_length=64, max_length=64)
+    artifact_path: str
+    mandatory: bool = False
+    security: bool = False
+    notes: str = ""
+
+
+@app.post("/v1/admin/products/{product_id}/releases")
+def publish_release(
+    product_id: int,
+    request: ReleaseRequest,
+    db: Session = Depends(get_db),
+    x_admin_token: str | None = Header(default=None),
+):
+    """Publish immediately and sign a product-scoped manifest."""
+    from .crypto import make_lease
+
+    _require_session(x_admin_token)
+    payload = {
+        "version": request.version,
+        "channel": request.channel,
+        "platform": request.platform,
+        "sha256": request.sha256,
+        "mandatory": request.mandatory,
+        "security": request.security,
+        "notes": request.notes,
+    }
+    signature = make_lease(payload, key_from_env("UPDATE_SIGNING_PRIVATE_KEY"))
+    row = Release(
+        product_id=product_id,
+        version=request.version,
+        channel=request.channel,
+        platform=request.platform,
+        sha256=request.sha256,
+        artifact_path=request.artifact_path,
+        mandatory=request.mandatory,
+        security=request.security,
+        manifest_signature=signature,
+        status="published",
+        notes=request.notes,
+    )
+    db.add(row)
+    db.commit()
+    _audit(db, "release.publish", request.version, product_id, channel=request.channel)
+    return {"id": row.id, "version": row.version, "signature": signature}
 
 
 @app.get("/v1/admin/audit")
