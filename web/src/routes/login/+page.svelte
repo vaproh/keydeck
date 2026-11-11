@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { mode, toggleMode } from 'mode-watcher';
+	import { Moon, Sun } from '@lucide/svelte';
 	import { api, login } from '#lib/api';
 	import { Button } from '#lib/components/ui/button';
 	import { Input } from '#lib/components/ui/input';
@@ -119,7 +121,16 @@
 	}
 </script>
 
-<div class="grid min-h-screen place-items-center px-5 py-10">
+<div class="relative grid min-h-screen place-items-center px-5 py-10">
+	<button
+		type="button"
+		onclick={toggleMode}
+		class="absolute right-5 top-5 inline-flex size-9 items-center justify-center rounded-md border border-border bg-card text-foreground hover:bg-muted"
+		aria-label="Toggle color mode"
+		title="Toggle color mode"
+	>
+		{#if mode.current === 'dark'}<Sun class="size-4" />{:else}<Moon class="size-4" />{/if}
+	</button>
 	<div class="w-full max-w-sm">
 		<div class="mb-6 flex items-center gap-3">
 			<img src={logo} alt="" class="size-10 rounded-md" />
