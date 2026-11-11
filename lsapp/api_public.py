@@ -9,7 +9,7 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -17,7 +17,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .crypto import lease_claims, make_lease, product_signing_key, sha256_hex
+from .crypto import (
+    effective_expires_at,
+    lease_claims,
+    make_lease,
+    product_signing_key,
+    sha256_hex,
+)
 from .db import get_db, init_db
 from .models import Activation, License, Product, Release
 
@@ -56,15 +62,28 @@ def _license_for(db: Session, key: str, product_slug: str) -> License:
     if not product or product.slug != product_slug:
         # A key issued for one product must never unlock another.
         raise HTTPException(status_code=403, detail="License is for another product")
-    if row.expires_at <= datetime.now(UTC).replace(tzinfo=None):
+    if product.status != "active":
+        raise HTTPException(status_code=403, detail="Product is disabled")
+    expires = effective_expires_at(row)
+    if expires is not None and expires <= datetime.now(UTC).replace(tzinfo=None):
         raise HTTPException(status_code=403, detail="License expired")
     return row
 
 
-def _activate(db: Session, request: ActivateRequest, ip: str) -> dict:
+def _activate(db: Session, request: ActivateRequest, ip: str, *, is_activation: bool) -> dict:
     row = _license_for(db, request.key, request.product)
+    now = datetime.now(UTC).replace(tzinfo=None)
     rows = [a for a in row.activations if a.revoked_at is None]
-    existing = next((a for a in rows if a.installation_hash == request.installation_hash), None)
+    existing = next(
+        (a for a in rows if a.installation_hash == request.installation_hash), None
+    )
+
+    if not is_activation and existing is None:
+        raise HTTPException(status_code=409, detail="Installation is not activated")
+
+    if is_activation and row.one_time_activation and row.used_at and existing is None:
+        raise HTTPException(status_code=409, detail="License is already used")
+
     if existing is None:
         if len(rows) >= row.max_activations:
             raise HTTPException(status_code=409, detail="Activation limit reached")
@@ -77,8 +96,26 @@ def _activate(db: Session, request: ActivateRequest, ip: str) -> dict:
         )
         db.add(existing)
     else:
-        existing.last_seen_at = datetime.now(UTC).replace(tzinfo=None)
+        existing.last_seen_at = now
         existing.app_version = request.app_version
+
+    if is_activation and row.starts_on_activation and row.first_activated_at is None:
+        if row.key_type == "trial":
+            seconds = int(row.trial_minutes or 0) * 60
+        elif row.key_type == "timed":
+            seconds = int(row.validity_days or 0) * 86400
+        else:
+            seconds = 0
+        if seconds <= 0 and row.key_type != "lifetime":
+            raise HTTPException(status_code=500, detail="License validity is misconfigured")
+        row.first_activated_at = now
+        if row.key_type != "lifetime":
+            row.activation_expires_at = now + timedelta(seconds=seconds)
+        row.used_at = now
+
+    if is_activation and row.one_time_activation and row.used_at is None:
+        row.used_at = now
+
     db.commit()
 
     limits = json.loads(row.limits_json or "{}")
@@ -90,17 +127,58 @@ def _activate(db: Session, request: ActivateRequest, ip: str) -> dict:
     claims = lease_claims(
         row, request.installation_hash, limits, features, product.slug
     )
-    return {"lease": make_lease(claims, private), "plan_name": row.plan_name, "limits": limits, "features": features}
+    expires = effective_expires_at(row)
+    remaining = None
+    if expires is not None:
+        remaining = max(0, int((expires - now).total_seconds()))
+    return {
+        "lease": make_lease(claims, private),
+        "plan_name": row.plan_name,
+        "key_type": row.key_type,
+        "lifetime": row.key_type == "lifetime",
+        "limits": limits,
+        "features": features,
+        "server_now": now.timestamp(),
+        "expires_at": expires.timestamp() if expires is not None else None,
+        "remaining_seconds": remaining,
+        "grace_seconds": 0 if row.key_type == "trial" else row.grace_seconds,
+    }
 
 
 @app.post("/v1/activate")
 def activate(request: ActivateRequest, http: Request, db: Session = Depends(get_db)):
-    return _activate(db, request, http.client.host if http.client else "")
+    return _activate(
+        db, request, http.client.host if http.client else "", is_activation=True
+    )
 
 
 @app.post("/v1/heartbeat")
 def heartbeat(request: HeartbeatRequest, db: Session = Depends(get_db)):
-    return _activate(db, request, "")
+    return _activate(db, request, "", is_activation=False)
+
+
+@app.post("/v1/deactivate")
+def deactivate(request: HeartbeatRequest, db: Session = Depends(get_db)):
+    row = db.query(License).filter(License.key_hash == sha256_hex(request.key)).first()
+    if not row or row.status != "active":
+        raise HTTPException(status_code=401, detail="Invalid license")
+    product = db.query(Product).filter(Product.id == row.product_id).first()
+    if not product or product.slug != request.product:
+        raise HTTPException(status_code=403, detail="License is for another product")
+    activation = (
+        db.query(Activation)
+        .filter(
+            Activation.license_id == row.id,
+            Activation.installation_hash == request.installation_hash,
+            Activation.revoked_at.is_(None),
+        )
+        .first()
+    )
+    if activation is None:
+        raise HTTPException(status_code=404, detail="Activation not found")
+    activation.revoked_at = datetime.now(UTC).replace(tzinfo=None)
+    db.commit()
+    return {"deactivated": True}
 
 
 @app.get("/v1/update-check")
@@ -111,8 +189,8 @@ def update_check(
     db: Session = Depends(get_db),
 ):
     prod = db.query(Product).filter(Product.slug == product).first()
-    if not prod:
-        raise HTTPException(status_code=404, detail="Unknown product")
+    if not prod or prod.status != "active":
+        raise HTTPException(status_code=404, detail="Unknown or disabled product")
     row = (
         db.query(Release)
         .filter(

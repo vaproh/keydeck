@@ -19,7 +19,18 @@
     </select>
   </label>
   <label>Plan<input name="plan_name" value="standard" maxlength="40" /></label>
-  <label>Days<input name="days" type="number" value="365" min="1" max="3650" /></label>
+  <label>Key type
+    <select name="key_type">
+      <option value="trial">Trial</option>
+      <option value="timed" selected>Timed</option>
+      <option value="lifetime">Lifetime</option>
+    </select>
+  </label>
+  <label>Trial minutes<input name="trial_minutes" type="number" value="15" min="1" max="525600" /></label>
+  <label>Validity days<input name="days" type="number" value="365" min="1" max="3650" /></label>
+  <label><span>Starts on activation</span><input name="starts_on_activation" type="checkbox" value="1" /></label>
+  <label><span>One-time activation</span><input name="one_time_activation" type="checkbox" value="1" /></label>
+  <label>Grace seconds<input name="grace_seconds" type="number" value="86400" min="0" max="31536000" /></label>
   <label>Max activations<input name="max_activations" type="number" value="1" min="1" max="1000" /></label>
   <label>Limits JSON<input name="limits" value='{"max_accounts": 100}' /></label>
   <label>Features JSON<input name="features" value='["warmup","campaigns"]' /></label>
@@ -34,7 +45,7 @@
     <td><a href="/admin/licenses/{{ license.id }}" style="color:var(--accent)">#{{ license.id }}</a></td>
     <td>{{ license.plan_name }}</td>
     <td class="muted">…{{ license.key_last4 }}</td>
-    <td>{{ license.expires_at.date() }}</td>
+    <td>{% if license.key_type == 'lifetime' %}Never{% elif license.activation_expires_at %}{{ license.activation_expires_at.date() }}{% elif license.starts_on_activation %}On activation{% else %}{{ license.expires_at.date() }}{% endif %}</td>
     <td>{{ license.activations | rejectattr('revoked_at') | list | length }} / {{ license.max_activations }}</td>
     <td class="{{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</td>
     <td><a href="/admin/licenses/{{ license.id }}" class="muted">Open</a></td>

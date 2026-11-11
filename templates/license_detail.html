@@ -5,7 +5,12 @@
   <div class="card"><span>Product</span><strong>{{ product.slug if product else '—' }}</strong></div>
   <div class="card"><span>Plan</span><strong>{{ license.plan_name }}</strong></div>
   <div class="card"><span>Status</span><strong class="{{ 'ok' if license.status == 'active' else 'bad' }}">{{ license.status }}</strong></div>
-  <div class="card"><span>Expires</span><strong>{{ license.expires_at.date() }}</strong></div>
+  <div class="card"><span>Type</span><strong>{{ license.key_type }}</strong></div>
+  <div class="card"><span>Expires</span><strong>{% if license.key_type == 'lifetime' %}Never{% elif license.activation_expires_at %}{{ license.activation_expires_at.date() }}{% elif license.starts_on_activation %}On activation{% else %}{{ license.expires_at.date() }}{% endif %}</strong></div>
+  <div class="card"><span>First activated</span><strong>{{ license.first_activated_at or '—' }}</strong></div>
+  <div class="card"><span>Activation expires</span><strong>{{ license.activation_expires_at or '—' }}</strong></div>
+  <div class="card"><span>Used at</span><strong>{{ license.used_at or '—' }}</strong></div>
+  <div class="card"><span>Grace</span><strong>{{ license.grace_seconds }}s</strong></div>
 </div>
 <h2>Limits and features</h2>
 <p class="muted">limits {{ license.limits_json }}</p>

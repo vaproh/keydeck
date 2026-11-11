@@ -446,6 +446,153 @@ def test_unknown_and_expired_keys_are_rejected(admin_app, public):
 # ------------------------------------------------------------- service token
 
 
+def test_trial_starts_on_activation_and_is_one_time(admin_app, public):
+    from lsapp.crypto import product_signing_key, public_key_of, verify_lease
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(
+        admin,
+        csrf,
+        product_id,
+        key_type="trial",
+        trial_minutes="15",
+        max_activations="1",
+    )
+
+    first = public.post("/v1/activate", json={"key": key, "installation_hash": HASH})
+    assert first.status_code == 200
+    assert 890 <= first.json()["remaining_seconds"] <= 900
+    claims = verify_lease(
+        first.json()["lease"],
+        public_key_of(product_signing_key("reorchestra", "license")),
+    )
+    assert claims["key_type"] == "trial"
+    assert claims["grace_until"] == claims["expires_at"]
+
+    # Same installation may refresh; a second installation may not.
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": HASH}
+    ).status_code == 200
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": "b" * 64}
+    ).status_code == 409
+
+    assert public.post(
+        "/v1/heartbeat", json={"key": key, "installation_hash": HASH}
+    ).status_code == 200
+
+
+def test_trial_expires_on_server_time(admin_app, public):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(
+        admin, csrf, product_id, key_type="trial", trial_minutes="15"
+    )
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": HASH}
+    ).status_code == 200
+
+    from lsapp.db import SessionLocal
+    from lsapp.models import License
+
+    db = SessionLocal()
+    try:
+        row = db.query(License).order_by(License.id.desc()).first()
+        row.activation_expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
+        db.commit()
+    finally:
+        db.close()
+
+    assert public.post(
+        "/v1/heartbeat", json={"key": key, "installation_hash": HASH}
+    ).status_code == 403
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": HASH}
+    ).status_code == 403
+
+
+def test_timed_key_can_start_on_activation(admin_app, public):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(
+        admin,
+        csrf,
+        product_id,
+        key_type="timed",
+        days="30",
+        starts_on_activation="1",
+        grace_seconds="0",
+    )
+    first = public.post("/v1/activate", json={"key": key, "installation_hash": HASH})
+    assert first.status_code == 200
+    assert first.json()["remaining_seconds"] > 29 * 86400
+
+
+def test_lifetime_key_has_no_expiry(admin_app, public):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(admin, csrf, product_id, key_type="lifetime")
+    first = public.post("/v1/activate", json={"key": key, "installation_hash": HASH})
+    assert first.status_code == 200
+    assert first.json()["lifetime"] is True
+    assert first.json()["expires_at"] is None
+    assert first.json()["remaining_seconds"] is None
+
+
+def test_deactivate_frees_the_slot_and_rejects_heartbeat(admin_app, public):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(admin, csrf, product_id, max_activations="1")
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": HASH}
+    ).status_code == 200
+    assert public.post(
+        "/v1/deactivate", json={"key": key, "installation_hash": HASH}
+    ).status_code == 200
+    assert public.post(
+        "/v1/heartbeat", json={"key": key, "installation_hash": HASH}
+    ).status_code == 409
+    assert public.post(
+        "/v1/activate", json={"key": key, "installation_hash": "b" * 64}
+    ).status_code == 200
+
+
+def test_disabled_product_cannot_activate(admin_app, public):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf)
+    key = make_license(admin, csrf, product_id)
+
+    from lsapp.db import SessionLocal
+    from lsapp.models import Product
+
+    db = SessionLocal()
+    try:
+        product = db.get(Product, product_id)
+        product.status = "disabled"
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        assert public.post(
+            "/v1/activate", json={"key": key, "installation_hash": HASH}
+        ).status_code == 403
+    finally:
+        db = SessionLocal()
+        try:
+            db.get(Product, product_id).status = "active"
+            db.commit()
+        finally:
+            db.close()
+
+
 def test_service_token_publishes_releases_only(admin_app, public):
     import hashlib
 

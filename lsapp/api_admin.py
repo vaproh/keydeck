@@ -332,20 +332,64 @@ async def license_create(request: Request, product_id: int, db: DbSession = Depe
         raise HTTPException(
             status_code=400, detail="limits.max_accounts must be a positive integer"
         )
+
+    key_type = str(form.get("key_type") or "timed").strip().lower()
+    if key_type not in {"trial", "timed", "lifetime"}:
+        raise HTTPException(
+            status_code=400, detail="key_type must be trial, timed or lifetime"
+        )
     try:
         days = int(form.get("days") or 365)
+        trial_minutes = int(form.get("trial_minutes") or 15)
         max_activations = int(form.get("max_activations") or 1)
+        grace_seconds = int(form.get("grace_seconds") or 86400)
     except (TypeError, ValueError):
         raise HTTPException(
-            status_code=400, detail="days and max_activations must be integers"
+            status_code=400,
+            detail="days, trial_minutes, max_activations and grace_seconds must be integers",
         )
-    if not 1 <= days <= 3650:
+    if key_type == "timed" and not 1 <= days <= 3650:
         raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+    if key_type == "trial" and not 1 <= trial_minutes <= 525600:
+        raise HTTPException(
+            status_code=400, detail="trial_minutes must be between 1 and 525600"
+        )
     if not 1 <= max_activations <= 1000:
         raise HTTPException(
             status_code=400,
             detail="max_activations must be between 1 and 1000",
         )
+    if not 0 <= grace_seconds <= 31536000:
+        raise HTTPException(
+            status_code=400, detail="grace_seconds must be between 0 and 31536000"
+        )
+    if key_type == "trial":
+        starts_on_activation = True
+        one_time_activation = True
+        grace_seconds = 0
+        max_activations = 1
+        validity_days = None
+        expiry = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=3650)
+    elif key_type == "lifetime":
+        starts_on_activation = False
+        one_time_activation = False
+        validity_days = None
+        expiry = datetime(9999, 12, 31)
+    else:
+        starts_on_activation = form.get("starts_on_activation") in {
+            "1",
+            "true",
+            "on",
+            "yes",
+        }
+        one_time_activation = form.get("one_time_activation") in {
+            "1",
+            "true",
+            "on",
+            "yes",
+        }
+        validity_days = days
+        expiry = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=days)
 
     product_key = (
         db.query(ProductKey)
@@ -359,10 +403,15 @@ async def license_create(request: Request, product_id: int, db: DbSession = Depe
         key_hash=sha256_hex(key),
         key_last4=key[-4:],
         plan_name=plan_name,
+        key_type=key_type,
+        trial_minutes=trial_minutes if key_type == "trial" else None,
+        validity_days=validity_days,
+        starts_on_activation=starts_on_activation,
+        one_time_activation=one_time_activation,
+        grace_seconds=grace_seconds,
         limits_json=json.dumps(limits, sort_keys=True),
         features_json=json.dumps(features),
-        expires_at=datetime.now(UTC).replace(tzinfo=None)
-        + timedelta(days=days),
+        expires_at=expiry,
         max_activations=max_activations,
         notes=form.get("notes", ""),
     )
@@ -415,10 +464,29 @@ async def license_action(request: Request, license_id: int, action: str, db: DbS
         for activation in row.activations:
             activation.revoked_at = datetime.now(UTC).replace(tzinfo=None)
     elif action == "extend":
-        row.expires_at = row.expires_at + timedelta(days=int(form.get("days") or 30))
+        if row.key_type == "lifetime":
+            raise HTTPException(status_code=400, detail="Lifetime keys do not expire")
+        try:
+            days = int(form.get("days") or 30)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="days must be an integer")
+        if not 1 <= days <= 3650:
+            raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+        if row.activation_expires_at is not None:
+            row.activation_expires_at = row.activation_expires_at + timedelta(days=days)
+        else:
+            row.expires_at = row.expires_at + timedelta(days=days)
+            if row.starts_on_activation and row.key_type == "timed":
+                row.validity_days = (row.validity_days or 0) + days
+            elif row.key_type == "trial":
+                row.trial_minutes = (row.trial_minutes or 0) + days * 1440
     elif action == "reset":
+        now = datetime.now(UTC).replace(tzinfo=None)
         for activation in row.activations:
-            activation.revoked_at = datetime.now(UTC).replace(tzinfo=None)
+            activation.revoked_at = now
+        row.first_activated_at = None
+        row.activation_expires_at = None
+        row.used_at = None
     else:
         raise HTTPException(status_code=400, detail="Unknown action")
     db.commit()

@@ -3,6 +3,6 @@
 <h1>Key issued</h1>
 <div class="banner">Copy this key now. Only the last four characters are stored.</div>
 <p class="key">{{ raw_key }}</p>
-<p class="muted">Product {{ product.slug }} · plan {{ license.plan_name }} · expires {{ license.expires_at.date() }} · max {{ license.max_activations }} activation(s)</p>
+<p class="muted">Product {{ product.slug }} · plan {{ license.plan_name }} · type {{ license.key_type }} · {% if license.key_type == 'lifetime' %}never expires{% elif license.key_type == 'trial' %}{{ license.trial_minutes }} minute trial{% else %}{{ license.validity_days }} day validity{% endif %} · max {{ license.max_activations }} activation(s)</p>
 <p><a href="/admin/licenses/{{ license.id }}" style="color:var(--accent)">Open key detail</a></p>
 {% endblock %}

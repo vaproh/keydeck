@@ -89,6 +89,19 @@ def sign_manifest(payload: dict, key: Ed25519PrivateKey) -> str:
     return f"{b64encode(raw)}.{b64encode(key.sign(raw))}"
 
 
+def effective_expires_at(license_row) -> datetime | None:
+    """The server-side expiry for this key, or None for lifetime keys.
+
+    A key that starts its validity on activation has no effective expiry until
+    the first activation creates ``activation_expires_at``.
+    """
+    if getattr(license_row, "key_type", "timed") == "lifetime":
+        return None
+    if getattr(license_row, "starts_on_activation", False):
+        return license_row.activation_expires_at
+    return license_row.activation_expires_at or license_row.expires_at
+
+
 def lease_claims(
     license_row,
     installation_hash: str,
@@ -96,17 +109,30 @@ def lease_claims(
     features: list[str],
     product_slug: str = "",
 ) -> dict:
-    now = datetime.now(UTC)
-    expires = min(license_row.expires_at.replace(tzinfo=UTC), now + timedelta(hours=LEASE_HOURS))
-    grace_hours = int(os.getenv("LICENSE_OFFLINE_GRACE_HOURS", "24"))
+    now = datetime.now(UTC).replace(tzinfo=None)
+    key_type = getattr(license_row, "key_type", "timed")
+    lifetime = key_type == "lifetime"
+    key_expiry = effective_expires_at(license_row)
+    if lifetime:
+        lease_expires = now + timedelta(hours=LEASE_HOURS)
+    else:
+        if key_expiry is None:
+            raise ValueError("Key has no effective expiry")
+        lease_expires = min(key_expiry, now + timedelta(hours=LEASE_HOURS))
+    grace_seconds = 0 if key_type == "trial" else int(
+        getattr(license_row, "grace_seconds", 86400) or 0
+    )
     return {
         "product": product_slug,
         "license_id": license_row.id,
         "plan_name": license_row.plan_name,
+        "key_type": key_type,
+        "lifetime": lifetime,
         "limits": limits,
         "features": features,
         "installation_hash": installation_hash,
+        "server_now": now.timestamp(),
         "issued_at": now.timestamp(),
-        "expires_at": expires.timestamp(),
-        "grace_until": (expires + timedelta(hours=grace_hours)).timestamp(),
+        "expires_at": lease_expires.timestamp(),
+        "grace_until": (lease_expires + timedelta(seconds=grace_seconds)).timestamp(),
     }
