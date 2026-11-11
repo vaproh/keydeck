@@ -23,6 +23,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       PORT_LICENSE: 8080
       PORT_OTA: 8081
@@ -39,8 +41,7 @@ services:
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?set TURNSTILE_SECRET_KEY}
       TURNSTILE_EXPECTED_HOSTNAME: ${TURNSTILE_EXPECTED_HOSTNAME:?set TURNSTILE_EXPECTED_HOSTNAME}
       DOWNLOAD_SECRET: ${DOWNLOAD_SECRET:?set DOWNLOAD_SECRET}
-      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?run keydeck keygen}
-      UPDATE_SIGNING_KEY_REORCHESTRA: ${UPDATE_SIGNING_KEY_REORCHESTRA:?run keydeck keygen}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-}
     volumes:
       - artifacts:/data/artifacts
     expose:

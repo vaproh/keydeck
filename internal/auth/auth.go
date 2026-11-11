@@ -52,6 +52,7 @@ type Agent struct {
 	Name      string
 	Scopes    map[string]bool
 	ProductID int64
+	Bootstrap bool
 }
 
 func (a Agent) Has(scope string) bool { return a.Scopes[scope] }
@@ -127,8 +128,27 @@ func (s *Service) ClearCookie() *http.Cookie {
 
 func (s *Service) CookieName() string { return cookieName }
 
+var AllScopes = []string{
+	"products:read", "products:write", "licenses:read", "licenses:write", "releases:write", "audit:read",
+}
+
+func allScopes() map[string]bool {
+	scopes := make(map[string]bool, len(AllScopes))
+	for _, scope := range AllScopes {
+		scopes[scope] = true
+	}
+	return scopes
+}
+
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if raw := bearer(r); raw != "" && s.cfg.BootstrapAdminToken != "" && subtle.ConstantTimeCompare([]byte(raw), []byte(s.cfg.BootstrapAdminToken)) == 1 {
+			agent := Agent{Name: "bootstrap", Scopes: allScopes(), Bootstrap: true}
+			ctx := context.WithValue(r.Context(), agentKey{}, agent)
+			ctx = context.WithValue(ctx, sessionKey{}, Session{Actor: "agent:bootstrap"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		if raw := bearer(r); strings.HasPrefix(raw, "kd_admin_") {
 			row, err := s.q.GetAdminTokenByHash(r.Context(), hash(raw))
 			if err != nil || row.RevokedAt.Valid || (row.ExpiresAt.Valid && !row.ExpiresAt.Time.After(time.Now())) {

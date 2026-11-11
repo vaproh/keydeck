@@ -18,6 +18,7 @@ type Config struct {
 	AdminPasswordHash     string
 	AdminTOTPSecret       string
 	AdminActor            string
+	BootstrapAdminToken   string
 	DownloadSecret        string
 	TurnstileSiteKey      string
 	TurnstileSecretKey    string
@@ -37,6 +38,7 @@ func Load() (Config, error) {
 		AdminPasswordHash:     os.Getenv("ADMIN_PASSWORD_HASH"),
 		AdminTOTPSecret:       os.Getenv("ADMIN_TOTP_SECRET"),
 		AdminActor:            env("ADMIN_ACTOR", "admin"),
+		BootstrapAdminToken:   os.Getenv("BOOTSTRAP_ADMIN_TOKEN"),
 		DownloadSecret:        os.Getenv("DOWNLOAD_SECRET"),
 		TurnstileSiteKey:      os.Getenv("TURNSTILE_SITE_KEY"),
 		TurnstileSecretKey:    os.Getenv("TURNSTILE_SECRET_KEY"),

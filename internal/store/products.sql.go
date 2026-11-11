@@ -161,6 +161,31 @@ func (q *Queries) DeletePreset(ctx context.Context, arg DeletePresetParams) erro
 	return err
 }
 
+const getPreset = `-- name: GetPreset :one
+SELECT id, product_id, name, limits_json, features_json, validity_days, max_activations, created_at FROM plan_presets WHERE id = $1 AND product_id = $2
+`
+
+type GetPresetParams struct {
+	ID        int64 `json:"id"`
+	ProductID int64 `json:"product_id"`
+}
+
+func (q *Queries) GetPreset(ctx context.Context, arg GetPresetParams) (PlanPreset, error) {
+	row := q.db.QueryRow(ctx, getPreset, arg.ID, arg.ProductID)
+	var i PlanPreset
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.Name,
+		&i.LimitsJson,
+		&i.FeaturesJson,
+		&i.ValidityDays,
+		&i.MaxActivations,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getProduct = `-- name: GetProduct :one
 SELECT id, slug, name, status, created_at FROM products WHERE id = $1
 `

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/vaproh/keydeck/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,5 +62,23 @@ func TestBearerHeader(t *testing.T) {
 	r.Header.Set("Authorization", "Basic x")
 	if got := bearer(r); got != "" {
 		t.Fatalf("unexpected bearer: %q", got)
+	}
+}
+
+func TestBootstrapTokenGetsAllScopes(t *testing.T) {
+	service := New(config.Config{BootstrapAdminToken: "bootstrap-secret"}, nil)
+	handler := service.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		agent, ok := AgentFrom(r.Context())
+		if !ok || !agent.Bootstrap || !agent.Has("releases:write") || agent.ProductID != 0 {
+			t.Fatalf("unexpected bootstrap agent: %+v", agent)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Authorization", "Bearer bootstrap-secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
 	}
 }

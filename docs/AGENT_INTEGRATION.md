@@ -25,7 +25,9 @@ KEYDECK_PRODUCT_SLUG=reorchestra
 KEYDECK_ADMIN_TOKEN=kd_admin_...
 ```
 
-The agent sends it as a bearer token:
+If the database is empty, start once with `BOOTSTRAP_ADMIN_TOKEN` set to a strong random value. It has every scope and can create the first scoped token; remove it from `.env` and restart immediately after.
+
+The agent sends the scoped token as a bearer:
 
 ```bash
 curl -fsS "$KEYDECK_ADMIN_URL/api/admin/products/$PRODUCT_ID/limits" \

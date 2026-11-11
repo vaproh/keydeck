@@ -58,11 +58,21 @@ Postgres is the source of truth for products, keys, activations, releases, sessi
 
 ```bash
 cp .env.example .env
-go run ./cmd/keydeck keygen reorchestra   # put the output in .env
 go run ./cmd/keydeck passwd               # put the hash in ADMIN_PASSWORD_HASH
+openssl rand -base64 48                  # BOOTSTRAP_ADMIN_TOKEN, optional
 ```
 
 Fill in `ADMIN_TOTP_SECRET` from your authenticator, set a long random `DOWNLOAD_SECRET`, set the three domains, and add the Cloudflare Turnstile site key, secret key, and admin hostname. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
+
+A fresh database is **empty**: no products, keys, plans, releases, or sessions. Nothing is seeded. Use the bootstrap token once to create the first scoped agent token, then remove it from `.env` and restart. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md).
+
+The product signing seeds are the one server-side secret that cannot be created through the admin API. After creating the product, generate them and add them to `.env`:
+
+```bash
+go run ./cmd/keydeck keygen <product-slug>
+```
+
+Register the printed public keys on the product, then restart the stack.
 
 ```bash
 just test       # Go tests, including Postgres integration when TEST_DATABASE_URL is set
