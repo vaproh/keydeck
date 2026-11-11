@@ -15,7 +15,7 @@ services:
     environment:
       LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
       LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?set per-product license key}
-      LICENSE_DOWNLOAD_SECRET: ${LICENSE_DOWNLOAD_SECRET}
+      LICENSE_DOWNLOAD_SECRET: ${LICENSE_DOWNLOAD_SECRET:?set the download token secret}
       LICENSE_OFFLINE_GRACE_HOURS: "24"
       LICENSE_ARTIFACTS_DIR: /artifacts
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set the public license URL}
@@ -30,10 +30,10 @@ services:
     command: uvicorn lsapp.api_admin:app --host 0.0.0.0 --port 8000
     environment:
       LICENSE_DB_URL: postgresql+psycopg://licensing:${POSTGRES_PASSWORD}@postgres:5432/licensing
-      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA}
+      LICENSE_SIGNING_KEY_REORCHESTRA: ${LICENSE_SIGNING_KEY_REORCHESTRA:?set per-product license key}
       UPDATE_SIGNING_KEY_REORCHESTRA: ${UPDATE_SIGNING_KEY_REORCHESTRA:?set per-product update key}
-      LICENSE_ADMIN_PASSWORD_HASH: ${LICENSE_ADMIN_PASSWORD_HASH}
-      LICENSE_ADMIN_TOTP_SECRET: ${LICENSE_ADMIN_TOTP_SECRET}
+      LICENSE_ADMIN_PASSWORD_HASH: ${LICENSE_ADMIN_PASSWORD_HASH:?set the admin password hash}
+      LICENSE_ADMIN_TOTP_SECRET: ${LICENSE_ADMIN_TOTP_SECRET:?set the admin TOTP secret}
       ADMIN_SERVICE_TOKEN: ${ADMIN_SERVICE_TOKEN:?set CI service token}
       ADMIN_COOKIE_SECURE: "1"
       LICENSE_ARTIFACTS_DIR: /artifacts

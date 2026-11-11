@@ -36,6 +36,10 @@ def env(tmp_path_factory):
     os.environ["UPDATE_SIGNING_KEY_REORCHESTRA"] = _new_key()
     os.environ["LICENSE_SIGNING_KEY_OTHER_APP"] = _new_key()
     os.environ["UPDATE_SIGNING_KEY_OTHER_APP"] = _new_key()
+    os.environ["LICENSE_SIGNING_KEY_IDEMPOTENT_APP"] = _new_key()
+    os.environ["UPDATE_SIGNING_KEY_IDEMPOTENT_APP"] = _new_key()
+    os.environ["LICENSE_SIGNING_KEY_PREFIXED_APP"] = _new_key()
+    os.environ["UPDATE_SIGNING_KEY_PREFIXED_APP"] = _new_key()
     os.environ["LICENSE_ADMIN_TOTP_SECRET"] = TOTP_SECRET
     os.environ["LICENSE_DOWNLOAD_SECRET"] = "test-secret"
     os.environ["ADMIN_SERVICE_TOKEN"] = "ci-service-token"
@@ -124,7 +128,7 @@ def make_license(admin, csrf, product_id, **overrides):
         "plan_name": "operator",
         "days": "30",
         "max_activations": "1",
-        "limits": '{"accounts": 12}',
+        "limits": '{"max_accounts": 12}',
         "features": '["warmup"]',
         "notes": "test",
         **overrides,
@@ -254,6 +258,104 @@ def test_per_product_signing_keys_are_used(admin_app):
         db.close()
 
 
+def test_license_form_defaults_to_max_accounts(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    login(admin)
+    page = admin.get("/admin/licenses")
+    assert page.status_code == 200
+    assert '{"max_accounts": 100}' in page.text
+
+
+def test_product_key_registration_is_idempotent(admin_app):
+    from lsapp.db import SessionLocal
+    from lsapp.models import ProductKey
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf, "idempotent-app")
+    for _ in range(2):
+        response = admin.post(
+            f"/admin/products/{product_id}/keys",
+            data={"csrf_token": csrf, "prefix": "idem"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+    db = SessionLocal()
+    try:
+        assert db.query(ProductKey).filter(ProductKey.product_id == product_id).count() == 1
+    finally:
+        db.close()
+
+
+def test_license_uses_the_registered_prefix(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf, "prefixed-app")
+    admin.post(
+        f"/admin/products/{product_id}/keys",
+        data={"csrf_token": csrf, "prefix": "acme"},
+        follow_redirects=False,
+    )
+    key = make_license(admin, csrf, product_id)
+    assert key.startswith("acme_")
+
+
+def test_license_issue_audit_points_at_the_key_detail(admin_app):
+    from lsapp.db import SessionLocal
+    from lsapp.models import AuditEvent, License
+
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf, "reorchestra")
+    make_license(admin, csrf, product_id)
+    db = SessionLocal()
+    try:
+        row = db.query(License).order_by(License.id.desc()).first()
+        events = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "license.issue",
+                AuditEvent.target == str(row.id),
+            )
+            .all()
+        )
+        assert events
+    finally:
+        db.close()
+
+
+def test_license_issue_rejects_invalid_form_values(admin_app):
+    admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
+    csrf = login(admin)
+    product_id = make_product(admin, csrf, "reorchestra")
+    base = {
+        "csrf_token": csrf,
+        "plan_name": "operator",
+        "days": "30",
+        "max_activations": "1",
+        "limits": '{"max_accounts": 12}',
+        "features": '["warmup"]',
+        "notes": "",
+    }
+    cases = [
+        {**base, "limits": "[]"},
+        {**base, "features": "{}"},
+        {**base, "limits": '{"max_accounts": 0}'},
+        {**base, "limits": '{"max_accounts": true}'},
+        {**base, "days": "0"},
+        {**base, "days": "nope"},
+        {**base, "max_activations": "0"},
+        {**base, "max_activations": "nope"},
+    ]
+    for data in cases:
+        response = admin.post(
+            f"/admin/products/{product_id}/licenses",
+            data=data,
+            follow_redirects=False,
+        )
+        assert response.status_code == 400, data
+
+
 def test_license_actions_extend_reset_revoke_and_audit(admin_app):
     admin = admin_app(__import__("lsapp.api_admin", fromlist=["app"]).app)
     csrf = login(admin)
@@ -315,7 +417,7 @@ def test_activation_uses_the_product_key_and_enforces_limits(admin_app, public):
         first.json()["lease"], public_key_of(product_signing_key("reorchestra", "license"))
     )
     assert claims["plan_name"] == "operator"
-    assert claims["limits"] == {"accounts": 12}
+    assert claims["limits"] == {"max_accounts": 12}
 
     assert public.post("/v1/activate", json={"key": key, "installation_hash": "b" * 64}).status_code == 409
 

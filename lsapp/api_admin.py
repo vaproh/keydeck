@@ -267,15 +267,23 @@ async def product_keys(request: Request, product_id: int, db: DbSession = Depend
         raise HTTPException(status_code=404, detail="Unknown product")
     license_env = product_signing_env(product.slug, "license")
     update_env = product_signing_env(product.slug, "update")
-    row = ProductKey(
-        product_id=product.id,
-        license_public_key=public_key_of(product_signing_key(product.slug, "license")),
-        update_public_key=public_key_of(product_signing_key(product.slug, "update")),
-        key_prefix=form.get("prefix", "reo")[:12] or "reo",
-        license_key_ref=license_env,
-        update_key_ref=update_env,
+    row = (
+        db.query(ProductKey)
+        .filter(ProductKey.product_id == product.id)
+        .first()
     )
-    db.add(row)
+    if row is None:
+        row = ProductKey(product_id=product.id)
+        db.add(row)
+    row.license_public_key = public_key_of(
+        product_signing_key(product.slug, "license")
+    )
+    row.update_public_key = public_key_of(
+        product_signing_key(product.slug, "update")
+    )
+    row.key_prefix = (form.get("prefix") or "reo")[:12] or "reo"
+    row.license_key_ref = license_env
+    row.update_key_ref = update_env
     db.commit()
     _audit(db, "product.keys", product.slug, product.id, license=license_env, update=update_env)
     return RedirectResponse("/admin/products", status_code=303)
@@ -305,24 +313,69 @@ async def license_create(request: Request, product_id: int, db: DbSession = Depe
     try:
         limits = json.loads(form.get("limits") or "{}")
         features = json.loads(form.get("features") or "[]")
-    except ValueError:
+    except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="limits/features must be JSON")
-    key = new_key(form.get("prefix") or "reo")
+    if not isinstance(limits, dict):
+        raise HTTPException(status_code=400, detail="limits must be a JSON object")
+    if not isinstance(features, list) or any(
+        not isinstance(feature, str) for feature in features
+    ):
+        raise HTTPException(
+            status_code=400, detail="features must be a JSON array of strings"
+        )
+    max_accounts = limits.get("max_accounts")
+    if max_accounts is not None and (
+        isinstance(max_accounts, bool)
+        or not isinstance(max_accounts, int)
+        or max_accounts < 1
+    ):
+        raise HTTPException(
+            status_code=400, detail="limits.max_accounts must be a positive integer"
+        )
+    try:
+        days = int(form.get("days") or 365)
+        max_activations = int(form.get("max_activations") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400, detail="days and max_activations must be integers"
+        )
+    if not 1 <= days <= 3650:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+    if not 1 <= max_activations <= 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="max_activations must be between 1 and 1000",
+        )
+
+    product_key = (
+        db.query(ProductKey)
+        .filter(ProductKey.product_id == product.id)
+        .first()
+    )
+    key = new_key((product_key.key_prefix if product_key else None) or "reo")
+    plan_name = (form.get("plan_name") or "standard").strip()[:40] or "standard"
     row = License(
         product_id=product.id,
         key_hash=sha256_hex(key),
         key_last4=key[-4:],
-        plan_name=(form.get("plan_name") or "standard")[:40],
-        limits_json=json.dumps(limits),
+        plan_name=plan_name,
+        limits_json=json.dumps(limits, sort_keys=True),
         features_json=json.dumps(features),
         expires_at=datetime.now(UTC).replace(tzinfo=None)
-        + timedelta(days=max(1, int(form.get("days") or 365))),
-        max_activations=max(1, int(form.get("max_activations") or 1)),
+        + timedelta(days=days),
+        max_activations=max_activations,
         notes=form.get("notes", ""),
     )
     db.add(row)
     db.commit()
-    _audit(db, "license.issue", key[-4:], product.id, plan=row.plan_name)
+    _audit(
+        db,
+        "license.issue",
+        str(row.id),
+        product.id,
+        key_last4=key[-4:],
+        plan=row.plan_name,
+    )
     return _render(
         request,
         "license_created.html",
