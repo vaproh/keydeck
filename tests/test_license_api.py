@@ -625,7 +625,8 @@ def test_download_path_is_shared_between_services(public, admin_app):
     from lsapp import api_admin
 
     target = api_admin.artifacts_dir() / "reorchestra" / "9.9.9" / "app.zip"
-    assert str(target).endswith("artifacts/reorchestra/9.9.9/app.zip")
+    # Compare path parts so Windows separators do not break the assertion.
+    assert target.parts[-4:] == ("artifacts", "reorchestra", "9.9.9", "app.zip")
 
 
 def test_production_requires_an_absolute_public_url(monkeypatch):
