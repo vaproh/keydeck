@@ -44,6 +44,7 @@
 	let container: HTMLDivElement;
 	let widgetId: string | null = null;
 	let siteKey = $state('');
+	let version = $state('');
 	let turnstileToken = $state('');
 	let password = $state('');
 	let totp = $state('');
@@ -54,8 +55,9 @@
 
 	onMount(async () => {
 		try {
-			const config = await api.get<{ site_key: string }>('/auth/config');
+			const config = await api.get<{ site_key: string; version: string }>('/auth/config');
 			siteKey = config.site_key;
+			version = config.version;
 			await loadTurnstile();
 			if (destroyed || !container) return;
 			widgetId = turnstileApi()!.render(container, {
@@ -165,6 +167,6 @@
 				</form>
 			</CardContent>
 		</Card>
-		<p class="mt-4 text-center text-[11px] text-muted-foreground">IP-restricted. All actions are audited.</p>
+		<p class="mt-4 text-center text-[11px] text-muted-foreground">IP-restricted. All actions are audited.{#if version} · Keydeck {version}{/if}</p>
 	</div>
 </div>
