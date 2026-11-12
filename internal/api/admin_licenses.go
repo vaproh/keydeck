@@ -65,6 +65,7 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 		StartsOnActivation bool            `json:"starts_on_activation"`
 		OneTimeActivation  bool            `json:"one_time_activation"`
 		GraceSeconds       *int32          `json:"grace_seconds"`
+		LeaseTTLSeconds    int32           `json:"lease_ttl_seconds"`
 		Limits             json.RawMessage `json:"limits"`
 		Features           json.RawMessage `json:"features"`
 		MaxActivations     int32           `json:"max_activations"`
@@ -119,6 +120,14 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	if body.GraceSeconds != nil {
 		grace = *body.GraceSeconds
 	}
+	leaseTTL := body.LeaseTTLSeconds
+	if leaseTTL == 0 {
+		leaseTTL = 86400
+	}
+	if leaseTTL < 60 || leaseTTL > 2592000 {
+		writeError(w, http.StatusBadRequest, "lease_ttl_seconds must be between 60 and 2592000")
+		return
+	}
 	oneTime := body.OneTimeActivation
 	starts := body.StartsOnActivation
 	switch body.KeyType {
@@ -164,7 +173,7 @@ func (a *App) createLicense(w http.ResponseWriter, r *http.Request) {
 	row, err := a.q.CreateLicense(r.Context(), store.CreateLicenseParams{
 		ProductID: productID, KeyHash: hash, KeyLast4: last4, PlanName: body.PlanName, HolderName: body.HolderName,
 		KeyType: body.KeyType, TrialMinutes: body.TrialMinutes, ValidityDays: body.ValidityDays,
-		StartsOnActivation: starts, OneTimeActivation: oneTime, GraceSeconds: grace,
+		StartsOnActivation: starts, OneTimeActivation: oneTime, GraceSeconds: grace, LeaseTtlSeconds: leaseTTL,
 		ConvertFrom: limits, ConvertFrom_2: features, ExpiresAt: pt(expiry),
 		MaxActivations: body.MaxActivations, Notes: body.Notes,
 	})
@@ -210,14 +219,15 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PlanName       *string         `json:"plan_name"`
-		HolderName     *string         `json:"holder_name"`
-		Limits         json.RawMessage `json:"limits"`
-		Features       json.RawMessage `json:"features"`
-		MaxActivations *int32          `json:"max_activations"`
-		Notes          *string         `json:"notes"`
-		GraceSeconds   *int32          `json:"grace_seconds"`
-		ExpiresAt      *string         `json:"expires_at"`
+		PlanName        *string         `json:"plan_name"`
+		HolderName      *string         `json:"holder_name"`
+		Limits          json.RawMessage `json:"limits"`
+		Features        json.RawMessage `json:"features"`
+		MaxActivations  *int32          `json:"max_activations"`
+		Notes           *string         `json:"notes"`
+		GraceSeconds    *int32          `json:"grace_seconds"`
+		LeaseTTLSeconds *int32          `json:"lease_ttl_seconds"`
+		ExpiresAt       *string         `json:"expires_at"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -248,6 +258,13 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 	if body.GraceSeconds != nil {
 		row.GraceSeconds = *body.GraceSeconds
 	}
+	if body.LeaseTTLSeconds != nil {
+		if *body.LeaseTTLSeconds < 60 || *body.LeaseTTLSeconds > 2592000 {
+			writeError(w, http.StatusBadRequest, "lease_ttl_seconds must be between 60 and 2592000")
+			return
+		}
+		row.LeaseTtlSeconds = *body.LeaseTTLSeconds
+	}
 	if body.ExpiresAt != nil {
 		t, err := time.Parse(time.RFC3339, *body.ExpiresAt)
 		if err != nil {
@@ -259,7 +276,8 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 	updated, err := a.q.UpdateLicense(r.Context(), store.UpdateLicenseParams{
 		ID: id, PlanName: row.PlanName, HolderName: row.HolderName,
 		ConvertFrom: row.LimitsJson, ConvertFrom_2: row.FeaturesJson,
-		MaxActivations: row.MaxActivations, Notes: row.Notes, GraceSeconds: row.GraceSeconds, ExpiresAt: row.ExpiresAt,
+		MaxActivations: row.MaxActivations, Notes: row.Notes, GraceSeconds: row.GraceSeconds,
+		LeaseTtlSeconds: row.LeaseTtlSeconds, ExpiresAt: row.ExpiresAt,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not update license")
@@ -326,7 +344,7 @@ func licenseFromListRow(row store.ListLicensesRow) store.License {
 		ID: row.ID, ProductID: row.ProductID, KeyHash: row.KeyHash, KeyLast4: row.KeyLast4,
 		PlanName: row.PlanName, HolderName: row.HolderName, KeyType: row.KeyType, TrialMinutes: row.TrialMinutes,
 		ValidityDays: row.ValidityDays, StartsOnActivation: row.StartsOnActivation,
-		OneTimeActivation: row.OneTimeActivation, GraceSeconds: row.GraceSeconds,
+		OneTimeActivation: row.OneTimeActivation, GraceSeconds: row.GraceSeconds, LeaseTtlSeconds: row.LeaseTtlSeconds,
 		FirstActivatedAt: row.FirstActivatedAt, ActivationExpiresAt: row.ActivationExpiresAt,
 		UsedAt: row.UsedAt, LimitsJson: row.LimitsJson, FeaturesJson: row.FeaturesJson,
 		ExpiresAt: row.ExpiresAt, MaxActivations: row.MaxActivations, Status: row.Status,

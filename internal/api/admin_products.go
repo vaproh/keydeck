@@ -111,8 +111,12 @@ func (a *App) getProduct(w http.ResponseWriter, r *http.Request) {
 	limits, _ := a.q.ListLimits(r.Context(), id)
 	features, _ := a.q.ListFeatures(r.Context(), id)
 	presets, _ := a.q.ListPresets(r.Context(), id)
+	presetItems := make([]map[string]any, 0, len(presets))
+	for _, preset := range presets {
+		presetItems = append(presetItems, presetJSON(preset))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"product": productJSON(product), "key": key, "limits": limits, "features": features, "presets": presets,
+		"product": productJSON(product), "key": key, "limits": limits, "features": features, "presets": presetItems,
 	})
 }
 

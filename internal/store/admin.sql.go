@@ -42,7 +42,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const expiringLicenses = `-- name: ExpiringLicenses :many
-SELECT l.id, l.product_id, l.key_hash, l.key_last4, l.plan_name, l.key_type, l.trial_minutes, l.validity_days, l.starts_on_activation, l.one_time_activation, l.grace_seconds, l.first_activated_at, l.activation_expires_at, l.used_at, l.limits_json, l.features_json, l.expires_at, l.max_activations, l.status, l.notes, l.created_at, l.holder_name, p.slug AS product_slug FROM licenses l JOIN products p ON p.id = l.product_id
+SELECT l.id, l.product_id, l.key_hash, l.key_last4, l.plan_name, l.key_type, l.trial_minutes, l.validity_days, l.starts_on_activation, l.one_time_activation, l.grace_seconds, l.first_activated_at, l.activation_expires_at, l.used_at, l.limits_json, l.features_json, l.expires_at, l.max_activations, l.status, l.notes, l.created_at, l.holder_name, l.lease_ttl_seconds, p.slug AS product_slug FROM licenses l JOIN products p ON p.id = l.product_id
 WHERE l.status = 'active' AND l.expires_at < now() + interval '30 days'
 ORDER BY l.expires_at LIMIT 20
 `
@@ -70,6 +70,7 @@ type ExpiringLicensesRow struct {
 	Notes               string             `json:"notes"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	HolderName          string             `json:"holder_name"`
+	LeaseTtlSeconds     int32              `json:"lease_ttl_seconds"`
 	ProductSlug         string             `json:"product_slug"`
 }
 
@@ -105,6 +106,7 @@ func (q *Queries) ExpiringLicenses(ctx context.Context) ([]ExpiringLicensesRow, 
 			&i.Notes,
 			&i.CreatedAt,
 			&i.HolderName,
+			&i.LeaseTtlSeconds,
 			&i.ProductSlug,
 		); err != nil {
 			return nil, err

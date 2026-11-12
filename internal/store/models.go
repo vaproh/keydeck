@@ -74,6 +74,7 @@ type License struct {
 	Notes               string             `json:"notes"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	HolderName          string             `json:"holder_name"`
+	LeaseTtlSeconds     int32              `json:"lease_ttl_seconds"`
 }
 
 type PlanPreset struct {
