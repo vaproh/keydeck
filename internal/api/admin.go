@@ -40,6 +40,7 @@ func (a *App) AdminRouter() http.Handler {
 			r.Get("/releases", a.listReleases)
 			r.Post("/releases", a.uploadRelease)
 			r.Get("/audit", a.auditList)
+			r.Get("/heartbeats", a.listHeartbeats)
 		})
 	})
 	return r

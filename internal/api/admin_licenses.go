@@ -208,7 +208,20 @@ func (a *App) getLicense(w http.ResponseWriter, r *http.Request) {
 	}
 	item["activation_count"] = len(activations)
 	item["display_status"] = licenseStatus(row, int64(len(activations)))
-	writeJSON(w, http.StatusOK, map[string]any{"license": item, "activations": activations})
+	events, _ := a.q.ListLicenseEvents(r.Context(), store.ListLicenseEventsParams{LicenseID: id, Limit: 200})
+	heartbeats, _ := a.q.ListLicenseHeartbeats(r.Context(), store.ListLicenseHeartbeatsParams{LicenseID: id, Limit: 200})
+	activationLogs := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		activationLogs = append(activationLogs, eventJSON(event))
+	}
+	beatLogs := make([]map[string]any, 0, len(heartbeats))
+	for _, event := range heartbeats {
+		beatLogs = append(beatLogs, eventJSON(event))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"license": item, "activations": activations,
+		"activation_logs": activationLogs, "heartbeats": beatLogs,
+	})
 }
 
 func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
@@ -226,15 +239,21 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PlanName        *string         `json:"plan_name"`
-		HolderName      *string         `json:"holder_name"`
-		Limits          json.RawMessage `json:"limits"`
-		Features        json.RawMessage `json:"features"`
-		MaxActivations  *int32          `json:"max_activations"`
-		Notes           *string         `json:"notes"`
-		GraceSeconds    *int32          `json:"grace_seconds"`
-		LeaseTTLSeconds *int32          `json:"lease_ttl_seconds"`
-		ExpiresAt       *string         `json:"expires_at"`
+		PlanName           *string         `json:"plan_name"`
+		HolderName         *string         `json:"holder_name"`
+		KeyType            *string         `json:"key_type"`
+		TrialMinutes       *int32          `json:"trial_minutes"`
+		ValidityDays       *int32          `json:"validity_days"`
+		StartsOnActivation *bool           `json:"starts_on_activation"`
+		OneTimeActivation  *bool           `json:"one_time_activation"`
+		Limits             json.RawMessage `json:"limits"`
+		Features           json.RawMessage `json:"features"`
+		MaxActivations     *int32          `json:"max_activations"`
+		Notes              *string         `json:"notes"`
+		GraceSeconds       *int32          `json:"grace_seconds"`
+		LeaseTTLSeconds    *int32          `json:"lease_ttl_seconds"`
+		ExpiresAt          *string         `json:"expires_at"`
+		ActivationExpires  *string         `json:"activation_expires_at"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -248,6 +267,71 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 		if len(row.HolderName) > 120 {
 			writeError(w, http.StatusBadRequest, "holder_name is too long")
 			return
+		}
+	}
+	if body.KeyType != nil {
+		if *body.KeyType != "trial" && *body.KeyType != "timed" && *body.KeyType != "lifetime" {
+			writeError(w, http.StatusBadRequest, "invalid key type")
+			return
+		}
+		row.KeyType = *body.KeyType
+	}
+	if body.TrialMinutes != nil {
+		if *body.TrialMinutes < 0 {
+			writeError(w, http.StatusBadRequest, "trial_minutes cannot be negative")
+			return
+		}
+		if *body.TrialMinutes == 0 {
+			row.TrialMinutes = nil
+		} else {
+			row.TrialMinutes = body.TrialMinutes
+		}
+	}
+	if body.ValidityDays != nil {
+		if *body.ValidityDays < 0 {
+			writeError(w, http.StatusBadRequest, "validity_days cannot be negative")
+			return
+		}
+		if *body.ValidityDays == 0 {
+			row.ValidityDays = nil
+		} else {
+			row.ValidityDays = body.ValidityDays
+		}
+	}
+	if body.StartsOnActivation != nil {
+		row.StartsOnActivation = *body.StartsOnActivation
+	}
+	if body.OneTimeActivation != nil {
+		row.OneTimeActivation = *body.OneTimeActivation
+	}
+	if row.KeyType == "trial" {
+		if row.TrialMinutes == nil || *row.TrialMinutes < 1 {
+			writeError(w, http.StatusBadRequest, "trial keys need trial_minutes")
+			return
+		}
+		row.StartsOnActivation, row.OneTimeActivation, row.GraceSeconds = true, true, 0
+	}
+	if row.KeyType == "lifetime" {
+		row.ExpiresAt = pt(time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC))
+		row.ActivationExpiresAt = pgtype.Timestamptz{}
+	}
+	if body.TrialMinutes != nil && row.KeyType == "trial" && row.TrialMinutes != nil {
+		duration := time.Duration(*row.TrialMinutes) * time.Minute
+		if row.FirstActivatedAt.Valid {
+			row.ActivationExpiresAt = pt(row.FirstActivatedAt.Time.Add(duration))
+		} else {
+			row.ExpiresAt = pt(row.CreatedAt.Time.Add(duration))
+		}
+	}
+	if body.ValidityDays != nil && row.KeyType == "timed" && row.ValidityDays != nil {
+		base := row.CreatedAt.Time
+		if row.FirstActivatedAt.Valid {
+			base = row.FirstActivatedAt.Time
+		}
+		end := base.Add(time.Duration(*row.ValidityDays) * 24 * time.Hour)
+		row.ExpiresAt = pt(end)
+		if row.FirstActivatedAt.Valid {
+			row.ActivationExpiresAt = pt(end)
 		}
 	}
 	if len(body.Limits) > 0 {
@@ -265,6 +349,9 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 	if body.GraceSeconds != nil {
 		row.GraceSeconds = *body.GraceSeconds
 	}
+	if row.KeyType == "trial" {
+		row.GraceSeconds = 0
+	}
 	if body.LeaseTTLSeconds != nil {
 		if *body.LeaseTTLSeconds < 60 || *body.LeaseTTLSeconds > 2592000 {
 			writeError(w, http.StatusBadRequest, "lease_ttl_seconds must be between 60 and 2592000")
@@ -278,13 +365,30 @@ func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid expiry")
 			return
 		}
-		row.ExpiresAt = pt(t)
+		if row.KeyType != "lifetime" {
+			row.ExpiresAt = pt(t)
+		}
+	}
+	if body.ActivationExpires != nil {
+		if *body.ActivationExpires == "" {
+			row.ActivationExpiresAt = pgtype.Timestamptz{}
+		} else {
+			t, err := time.Parse(time.RFC3339, *body.ActivationExpires)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid activation expiry")
+				return
+			}
+			row.ActivationExpiresAt = pt(t)
+		}
 	}
 	updated, err := a.q.UpdateLicense(r.Context(), store.UpdateLicenseParams{
 		ID: id, PlanName: row.PlanName, HolderName: row.HolderName,
+		KeyType: row.KeyType, TrialMinutes: row.TrialMinutes, ValidityDays: row.ValidityDays,
+		StartsOnActivation: row.StartsOnActivation, OneTimeActivation: row.OneTimeActivation,
 		ConvertFrom: row.LimitsJson, ConvertFrom_2: row.FeaturesJson,
 		MaxActivations: row.MaxActivations, Notes: row.Notes, GraceSeconds: row.GraceSeconds,
 		LeaseTtlSeconds: row.LeaseTtlSeconds, ExpiresAt: row.ExpiresAt,
+		ActivationExpiresAt: row.ActivationExpiresAt,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not update license")

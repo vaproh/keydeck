@@ -75,6 +75,7 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 	installation := strings.Repeat("a", 64)
 	first, err := service.Activate(ctx, ActivateRequest{
 		Key: raw, InstallationHash: installation, Product: slug, AppVersion: "test",
+		DeviceName: "QA machine", OS: "Windows", OSVersion: "11", Arch: "amd64", UserAgent: "keydeck-test",
 	}, "127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +85,16 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 	}
 	if *first.RemainingSeconds > 15*60 || *first.RemainingSeconds < 14*60 {
 		t.Fatalf("trial clock not server-authoritative: %d", *first.RemainingSeconds)
+	}
+	activationLogs, err := store.New(pool).ListLicenseEvents(ctx, store.ListLicenseEventsParams{LicenseID: license.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activationLogs) != 1 || activationLogs[0].EventType != "activation" || activationLogs[0].ActivationID == nil {
+		t.Fatalf("activation event missing: %+v", activationLogs)
+	}
+	if activationLogs[0].DeviceName != "QA machine" || activationLogs[0].Os != "Windows" {
+		t.Fatalf("device data missing: %+v", activationLogs[0])
 	}
 	parts := strings.Split(first.Lease, ".")
 	if len(parts) != 2 {
@@ -116,5 +127,23 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 		Key: raw, InstallationHash: installation, Product: slug,
 	}, ""); !errors.Is(err, ErrNoActivation) {
 		t.Fatalf("expected ErrNoActivation after deactivate, got %v", err)
+	}
+	beats, err := store.New(pool).ListLicenseHeartbeats(ctx, store.ListLicenseHeartbeatsParams{LicenseID: license.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(beats) != 1 || beats[0].ActivationID != nil {
+		t.Fatalf("unknown heartbeat was not recorded: %+v", beats)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE license_events SET created_at = now() - interval '8 days' WHERE license_id = $1 AND event_type = 'heartbeat'`, license.ID); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := service.CleanupHeartbeats(ctx)
+	if err != nil || removed < 1 {
+		t.Fatalf("cleanup removed %d: %v", removed, err)
+	}
+	logs, _ := store.New(pool).ListLicenseEvents(ctx, store.ListLicenseEventsParams{LicenseID: license.ID, Limit: 10})
+	if len(logs) < 2 {
+		t.Fatalf("activation logs were removed: %+v", logs)
 	}
 }

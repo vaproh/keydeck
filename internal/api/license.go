@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/vaproh/keydeck/internal/auth"
 	"github.com/vaproh/keydeck/internal/licensing"
 )
 
@@ -24,7 +25,7 @@ func (a *App) activate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	resp, err := a.license.Activate(r.Context(), req, r.RemoteAddr)
+	resp, err := a.license.Activate(r.Context(), req, auth.ClientIP(r))
 	if err != nil {
 		licenseError(w, err)
 		return
@@ -38,7 +39,7 @@ func (a *App) heartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	resp, err := a.license.Heartbeat(r.Context(), req, r.RemoteAddr)
+	resp, err := a.license.Heartbeat(r.Context(), req, auth.ClientIP(r))
 	if err != nil {
 		licenseError(w, err)
 		return

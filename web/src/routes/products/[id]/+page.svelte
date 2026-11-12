@@ -31,6 +31,9 @@
 	let presetName = $state('');
 	let presetLimits = $state('{"max_accounts": 25}');
 	let presetFeatures = $state('["warmup"]');
+	let presetValidity = $state(30);
+	let presetActivations = $state(1);
+	let editingPreset = $state<{ id: number; name: string; limits: string; features: string; validity_days: number; max_activations: number } | null>(null);
 	const id = $derived(page.params.id);
 
 	async function load() {
@@ -58,9 +61,40 @@
 		event.preventDefault();
 		await api.post(`/admin/products/${id}/presets`, {
 			name: presetName, limits: JSON.parse(presetLimits), features: JSON.parse(presetFeatures),
-			validity_days: 30, max_activations: 1
+			validity_days: presetValidity, max_activations: presetActivations
 		});
 		presetName = '';
+		await load();
+	}
+	function startPresetEdit(preset: Preset) {
+		editingPreset = {
+			id: preset.id, name: preset.name, limits: JSON.stringify(preset.limits, null, 2),
+			features: JSON.stringify(preset.features), validity_days: preset.validity_days ?? 30,
+			max_activations: preset.max_activations
+		};
+	}
+	async function savePreset(event: SubmitEvent) {
+		event.preventDefault();
+		if (!editingPreset) return;
+		await api.patch(`/admin/products/${id}/presets/${editingPreset.id}`, {
+			name: editingPreset.name, limits: JSON.parse(editingPreset.limits),
+			features: JSON.parse(editingPreset.features), validity_days: editingPreset.validity_days,
+			max_activations: editingPreset.max_activations
+		});
+		editingPreset = null;
+		await load();
+	}
+	async function deletePreset(presetID: number) {
+		if (!confirm('Delete this plan preset?')) return;
+		await api.del(`/admin/products/${id}/presets/${presetID}`);
+		await load();
+	}
+	async function removeLimit(limitID: number) {
+		await api.del(`/admin/products/${id}/limits/${limitID}`);
+		await load();
+	}
+	async function removeFeature(featureID: number) {
+		await api.del(`/admin/products/${id}/features/${featureID}`);
 		await load();
 	}
 </script>
@@ -160,14 +194,14 @@
 				<Card>
 					<CardHeader><CardTitle>Limits</CardTitle></CardHeader>
 					<CardContent class="space-y-4">
-						<div class="flex flex-wrap gap-2">{#each data.limits as item (item.id)}<Badge variant="secondary">{item.key}</Badge>{:else}<span class="text-sm text-muted-foreground">No limits defined.</span>{/each}</div>
+						<div class="flex flex-wrap gap-2">{#each data.limits as item (item.id)}<span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs"><span>{item.key}</span><button class="text-muted-foreground hover:text-destructive" onclick={() => removeLimit(item.id)} aria-label={`Delete ${item.key}`}>×</button></span>{:else}<span class="text-sm text-muted-foreground">No limits defined.</span>{/each}</div>
 						<form class="flex gap-2" onsubmit={addLimit}><Input bind:value={limitKey} placeholder="max_accounts" required /><Button type="submit" variant="outline">Add</Button></form>
 					</CardContent>
 				</Card>
 				<Card>
 					<CardHeader><CardTitle>Features</CardTitle></CardHeader>
 					<CardContent class="space-y-4">
-						<div class="flex flex-wrap gap-2">{#each data.features as item (item.id)}<Badge variant="secondary">{item.key}</Badge>{:else}<span class="text-sm text-muted-foreground">No features defined.</span>{/each}</div>
+						<div class="flex flex-wrap gap-2">{#each data.features as item (item.id)}<span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs"><span>{item.key}</span><button class="text-muted-foreground hover:text-destructive" onclick={() => removeFeature(item.id)} aria-label={`Delete ${item.key}`}>×</button></span>{:else}<span class="text-sm text-muted-foreground">No features defined.</span>{/each}</div>
 						<form class="flex gap-2" onsubmit={addFeature}><Input bind:value={featureKey} placeholder="warmup" required /><Button type="submit" variant="outline">Add</Button></form>
 					</CardContent>
 				</Card>
@@ -177,10 +211,27 @@
 				<CardContent class="space-y-4">
 					<div class="grid gap-2 sm:grid-cols-3">
 						{#each data.presets as preset (preset.id)}
-							<div class="rounded-lg border border-border p-3"><p class="text-sm font-medium">{preset.name}</p><p class="mt-1 text-xs text-muted-foreground">{preset.validity_days ?? '—'} days · {preset.max_activations} activation(s)</p><p class="mt-2 text-xs text-muted-foreground">Limits {JSON.stringify(preset.limits)}</p><p class="text-xs text-muted-foreground">Features {preset.features.join(', ') || 'none'}</p></div>
+							{#if editingPreset?.id === preset.id}
+								<form class="space-y-2 rounded-lg border border-accent/40 p-3" onsubmit={savePreset}>
+									<Input bind:value={editingPreset.name} placeholder="Preset name" required />
+									<div class="grid grid-cols-2 gap-2">
+										<Input type="number" min="1" bind:value={editingPreset.validity_days} placeholder="Days" />
+										<Input type="number" min="1" bind:value={editingPreset.max_activations} placeholder="Activations" />
+									</div>
+									<textarea class="min-h-16 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={editingPreset.limits}></textarea>
+									<textarea class="min-h-12 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={editingPreset.features}></textarea>
+									<div class="flex gap-2"><Button type="submit" variant="outline">Save</Button><Button type="button" variant="ghost" onclick={() => (editingPreset = null)}>Cancel</Button></div>
+								</form>
+							{:else}
+								<div class="rounded-lg border border-border p-3">
+									<div class="flex items-start justify-between gap-2"><div><p class="text-sm font-medium">{preset.name}</p><p class="mt-1 text-xs text-muted-foreground">{preset.validity_days ?? '—'} days · {preset.max_activations} activation(s)</p></div><div class="flex gap-1"><button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => startPresetEdit(preset)}>Edit</button><button class="text-xs text-destructive hover:underline" onclick={() => deletePreset(preset.id)}>Delete</button></div></div>
+									<p class="mt-2 text-xs text-muted-foreground">Limits {JSON.stringify(preset.limits)}</p>
+									<p class="text-xs text-muted-foreground">Features {preset.features.join(', ') || 'none'}</p>
+								</div>
+							{/if}
 						{:else}<p class="text-sm text-muted-foreground">No presets yet.</p>{/each}
 					</div>
-					<form class="grid gap-2 sm:grid-cols-4" onsubmit={addPreset}><Input bind:value={presetName} placeholder="Preset name" required /><Input bind:value={presetLimits} placeholder="max_accounts: 25" /><Input bind:value={presetFeatures} placeholder="warmup" /><Button type="submit" variant="outline">Save preset</Button></form>
+					<form class="grid gap-2 sm:grid-cols-5" onsubmit={addPreset}><Input bind:value={presetName} placeholder="Preset name" required /><Input type="number" min="1" bind:value={presetValidity} placeholder="Days" /><Input type="number" min="1" bind:value={presetActivations} placeholder="Activations" /><Input bind:value={presetLimits} placeholder="max_accounts: 25" /><Input bind:value={presetFeatures} placeholder="warmup" /><Button type="submit" variant="outline" class="sm:col-span-5">Save preset</Button></form>
 				</CardContent>
 			</Card>
 			<Card>

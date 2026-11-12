@@ -118,6 +118,10 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 	if recEdit.Code != http.StatusOK {
 		t.Fatalf("preset edit: %d %s", recEdit.Code, recEdit.Body.String())
 	}
+	recDeletePreset := do(http.MethodDelete, fmt.Sprintf("/admin/products/%d/presets/%d", autoProduct.Product.ID, preset.ID), "csrf", nil, "")
+	if recDeletePreset.Code != http.StatusNoContent {
+		t.Fatalf("preset delete: %d %s", recDeletePreset.Code, recDeletePreset.Body.String())
+	}
 	recLicense := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/licenses", autoProduct.Product.ID), "csrf", map[string]any{
 		"key_type": "trial", "trial_minutes": 15, "holder_name": "Activation test",
 	}, "")
@@ -133,12 +137,71 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 	if err := json.Unmarshal(recLicense.Body.Bytes(), &createdLicense); err != nil {
 		t.Fatal(err)
 	}
+	recUpdate := do(http.MethodPatch, fmt.Sprintf("/admin/licenses/%d", createdLicense.License.ID), "csrf", map[string]any{
+		"holder_name": "Edited holder", "key_type": "timed", "validity_days": 10,
+		"max_activations": 3, "lease_ttl_seconds": 120, "limits": map[string]int{"max_accounts": 7},
+	}, "")
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("license update: %d %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	var updatedLicense struct {
+		HolderName     string         `json:"holder_name"`
+		KeyType        string         `json:"key_type"`
+		MaxActivations int32          `json:"max_activations"`
+		LeaseTTL       int32          `json:"lease_ttl_seconds"`
+		Limits         map[string]int `json:"limits"`
+		GraceSeconds   int32          `json:"grace_seconds"`
+	}
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updatedLicense); err != nil {
+		t.Fatal(err)
+	}
+	if updatedLicense.HolderName != "Edited holder" || updatedLicense.KeyType != "timed" ||
+		updatedLicense.MaxActivations != 3 || updatedLicense.LeaseTTL != 120 || updatedLicense.Limits["max_accounts"] != 7 {
+		t.Fatalf("license update not applied: %+v", updatedLicense)
+	}
+	recTrial := do(http.MethodPatch, fmt.Sprintf("/admin/licenses/%d", createdLicense.License.ID), "csrf", map[string]any{
+		"key_type": "trial", "trial_minutes": 5, "grace_seconds": 3600,
+	}, "")
+	if recTrial.Code != http.StatusOK {
+		t.Fatalf("trial update: %d %s", recTrial.Code, recTrial.Body.String())
+	}
+	var trialLicense struct {
+		GraceSeconds int32  `json:"grace_seconds"`
+		TrialMinutes *int32 `json:"trial_minutes"`
+	}
+	if err := json.Unmarshal(recTrial.Body.Bytes(), &trialLicense); err != nil {
+		t.Fatal(err)
+	}
+	if trialLicense.GraceSeconds != 0 || trialLicense.TrialMinutes == nil || *trialLicense.TrialMinutes != 5 {
+		t.Fatalf("trial update not enforced: %+v", trialLicense)
+	}
+
 	activation, err := q.CreateActivation(ctx, store.CreateActivationParams{
 		LicenseID: createdLicense.License.ID, InstallationHash: strings.Repeat("a", 64),
 		MachineHash: "machine", AppVersion: "1.0.0", Ip: "127.0.0.1",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := q.CreateLicenseEvent(ctx, store.CreateLicenseEventParams{
+		LicenseID: createdLicense.License.ID, ActivationID: &activation.ID, EventType: "heartbeat",
+		InstallationHash: activation.InstallationHash, DeviceName: "QA box", Os: "Linux", AppVersion: "1.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recLogs := do(http.MethodGet, fmt.Sprintf("/admin/licenses/%d", createdLicense.License.ID), "", nil, "")
+	if recLogs.Code != http.StatusOK {
+		t.Fatalf("license logs: %d", recLogs.Code)
+	}
+	var logs struct {
+		Heartbeats []map[string]any `json:"heartbeats"`
+	}
+	if err := json.Unmarshal(recLogs.Body.Bytes(), &logs); err != nil || len(logs.Heartbeats) != 1 {
+		t.Fatalf("license heartbeat logs: %v %s", err, recLogs.Body.String())
+	}
+	recBeats := do(http.MethodGet, fmt.Sprintf("/admin/heartbeats?license_id=%d", createdLicense.License.ID), "", nil, "")
+	if recBeats.Code != http.StatusOK {
+		t.Fatalf("global heartbeats: %d", recBeats.Code)
 	}
 	recActivation := do(http.MethodPost, fmt.Sprintf("/admin/licenses/%d/activations/%d/revoke", createdLicense.License.ID, activation.ID), "csrf", nil, "")
 	if recActivation.Code != http.StatusOK {

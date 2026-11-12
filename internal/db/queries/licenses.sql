@@ -24,9 +24,12 @@ RETURNING *;
 
 -- name: UpdateLicense :one
 UPDATE licenses SET plan_name = $2, holder_name = $3,
-    limits_json = convert_from($4, 'UTF8')::jsonb,
-    features_json = convert_from($5, 'UTF8')::jsonb,
-    max_activations = $6, notes = $7, grace_seconds = $8, lease_ttl_seconds = $9, expires_at = $10
+    key_type = $4, trial_minutes = $5, validity_days = $6,
+    starts_on_activation = $7, one_time_activation = $8,
+    limits_json = convert_from($9, 'UTF8')::jsonb,
+    features_json = convert_from($10, 'UTF8')::jsonb,
+    max_activations = $11, notes = $12, grace_seconds = $13,
+    lease_ttl_seconds = $14, expires_at = $15, activation_expires_at = $16
 WHERE id = $1 RETURNING *;
 
 -- name: RevokeLicense :exec
@@ -55,11 +58,12 @@ SELECT * FROM activations WHERE license_id = $1 AND installation_hash = $2;
 SELECT count(*) FROM activations WHERE license_id = $1 AND revoked_at IS NULL;
 
 -- name: CreateActivation :one
-INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip)
-VALUES ($1, $2, $3, $4, $5) RETURNING *;
+INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip, device_name, os, os_version, arch, user_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *;
 
 -- name: TouchActivation :exec
-UPDATE activations SET last_seen_at = now(), app_version = $3
+UPDATE activations SET last_seen_at = now(), app_version = $3, ip = $4,
+    device_name = $5, os = $6, os_version = $7, arch = $8, user_agent = $9
 WHERE license_id = $1 AND installation_hash = $2;
 
 -- name: RevokeActivation :exec

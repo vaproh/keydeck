@@ -49,6 +49,11 @@ type ActivateRequest struct {
 	MachineHash      string `json:"machine_hash"`
 	AppVersion       string `json:"app_version"`
 	Product          string `json:"product"`
+	DeviceName       string `json:"device_name"`
+	OS               string `json:"os"`
+	OSVersion        string `json:"os_version"`
+	Arch             string `json:"arch"`
+	UserAgent        string `json:"user_agent"`
 }
 
 type Response struct {
@@ -77,10 +82,29 @@ func (s *Service) Deactivate(ctx context.Context, req ActivateRequest) error {
 	if err != nil {
 		return err
 	}
-	return s.q.RevokeActivation(ctx, store.RevokeActivationParams{LicenseID: row.ID, InstallationHash: req.InstallationHash})
+	activation, getErr := s.q.GetActivation(ctx, store.GetActivationParams{LicenseID: row.ID, InstallationHash: req.InstallationHash})
+	var activationID *int64
+	if getErr == nil {
+		activationID = &activation.ID
+	}
+	if err := s.q.RevokeActivation(ctx, store.RevokeActivationParams{LicenseID: row.ID, InstallationHash: req.InstallationHash}); err != nil {
+		return err
+	}
+	_ = s.logEvent(ctx, row.ID, activationID, "deactivation", req, "")
+	return nil
+}
+
+// CleanupHeartbeats keeps seven days of heartbeat events. Activation/deactivation events are retained.
+func (s *Service) CleanupHeartbeats(ctx context.Context) (int64, error) {
+	return s.q.DeleteOldHeartbeats(ctx)
 }
 
 func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allowCreate bool) (Response, error) {
+	req.DeviceName = clip(req.DeviceName, 120)
+	req.OS = clip(req.OS, 80)
+	req.OSVersion = clip(req.OSVersion, 80)
+	req.Arch = clip(req.Arch, 40)
+	req.UserAgent = clip(req.UserAgent, 300)
 	if len(req.Key) < 8 || len(req.InstallationHash) != 64 || req.Product == "" {
 		return Response{}, ErrMalformed
 	}
@@ -99,7 +123,12 @@ func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allow
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Response{}, err
 	}
+	eventType := "heartbeat"
+	var activationID *int64
 	if !hasActivation && !allowCreate {
+		if err := s.logEvent(ctx, row.ID, nil, "heartbeat", req, ip); err != nil {
+			return Response{}, err
+		}
 		return Response{}, ErrNoActivation
 	}
 	if !hasActivation && row.OneTimeActivation && row.UsedAt.Valid {
@@ -113,20 +142,33 @@ func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allow
 		if count >= int64(row.MaxActivations) {
 			return Response{}, ErrActivation
 		}
-		if _, err := s.q.CreateActivation(ctx, store.CreateActivationParams{
+		created, err := s.q.CreateActivation(ctx, store.CreateActivationParams{
 			LicenseID:        row.ID,
 			InstallationHash: req.InstallationHash,
 			MachineHash:      req.MachineHash,
 			AppVersion:       req.AppVersion,
 			Ip:               ip,
-		}); err != nil {
+			DeviceName:       req.DeviceName,
+			Os:               req.OS,
+			OsVersion:        req.OSVersion,
+			Arch:             req.Arch,
+			UserAgent:        req.UserAgent,
+		})
+		if err != nil {
 			return Response{}, err
 		}
+		activationID = &created.ID
+		eventType = "activation"
 	} else {
 		if err := s.q.TouchActivation(ctx, store.TouchActivationParams{
 			LicenseID: row.ID, InstallationHash: req.InstallationHash, AppVersion: req.AppVersion,
+			Ip: ip, DeviceName: req.DeviceName, Os: req.OS, OsVersion: req.OSVersion, Arch: req.Arch, UserAgent: req.UserAgent,
 		}); err != nil {
 			return Response{}, err
+		}
+		activationID = &activation.ID
+		if allowCreate {
+			eventType = "activation"
 		}
 	}
 
@@ -161,6 +203,8 @@ func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allow
 		}
 		expiry, hasExpiry, lifetime = effectiveExpiry(row)
 	}
+
+	_ = s.logEvent(ctx, row.ID, activationID, eventType, req, ip)
 
 	claims, err := s.claims(row, product, req.InstallationHash, now, expiry, hasExpiry, lifetime)
 	if err != nil {
@@ -218,6 +262,16 @@ func (s *Service) license(ctx context.Context, req ActivateRequest) (store.Licen
 		return store.License{}, store.Product{}, ErrProductOff
 	}
 	return row, product, nil
+}
+
+func (s *Service) logEvent(ctx context.Context, licenseID int64, activationID *int64, kind string, req ActivateRequest, ip string) error {
+	_, err := s.q.CreateLicenseEvent(ctx, store.CreateLicenseEventParams{
+		LicenseID: licenseID, ActivationID: activationID, EventType: kind,
+		InstallationHash: req.InstallationHash, MachineHash: req.MachineHash,
+		AppVersion: req.AppVersion, Ip: ip, DeviceName: req.DeviceName,
+		Os: req.OS, OsVersion: req.OSVersion, Arch: req.Arch, UserAgent: req.UserAgent,
+	})
+	return err
 }
 
 func (s *Service) claims(row store.License, product store.Product, installation string, now, expiry time.Time, hasExpiry, lifetime bool) (map[string]any, error) {
@@ -297,6 +351,13 @@ func effectiveExpiry(row store.License) (time.Time, bool, bool) {
 		return time.Time{}, false, false
 	}
 	return row.ExpiresAt.Time, true, false
+}
+
+func clip(value string, max int) string {
+	if len(value) > max {
+		return value[:max]
+	}
+	return value
 }
 
 func hashKey(key string) string {
