@@ -14,7 +14,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/build ./web/build
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/keydeck ./cmd/keydeck
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/keydeck ./cmd/keydeck
 
 FROM alpine:3.22 AS dirs
 RUN mkdir -p /data/artifacts /data/keys && chown -R 65532:65532 /data

@@ -1,4 +1,4 @@
-export type Session = { actor: string; csrf: string };
+export type Session = { actor: string; csrf: string; version: string };
 
 let csrf = '';
 

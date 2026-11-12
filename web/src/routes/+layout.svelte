@@ -86,6 +86,7 @@
 				<div class="rounded-lg border border-border bg-background/60 p-3">
 					<p class="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Signed in</p>
 					<p class="mt-1 text-sm font-medium">{session.actor}</p>
+					<p class="mt-1 font-mono text-[11px] text-muted-foreground">Keydeck {session.version}</p>
 					<button onclick={signOut} class="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
 						<LogOut class="size-3.5" /> Sign out
 					</button>

@@ -9,8 +9,8 @@ import (
 	"github.com/vaproh/keydeck/internal/config"
 )
 
-func TestAuthConfigExposesOnlySiteKey(t *testing.T) {
-	app := &App{cfg: config.Config{TurnstileSiteKey: "public-site", TurnstileSecretKey: "must-not-leak"}}
+func TestAuthConfigExposesSiteKeyAndVersion(t *testing.T) {
+	app := &App{cfg: config.Config{TurnstileSiteKey: "public-site", TurnstileSecretKey: "must-not-leak", Version: "1.2.3"}}
 	rec := httptest.NewRecorder()
 	app.authConfig(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
 	if rec.Code != http.StatusOK {
@@ -20,7 +20,7 @@ func TestAuthConfigExposesOnlySiteKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["site_key"] != "public-site" || len(body) != 1 {
+	if body["site_key"] != "public-site" || body["version"] != "1.2.3" || len(body) != 2 || body["secret"] != "" {
 		t.Fatalf("unexpected config: %+v", body)
 	}
 }

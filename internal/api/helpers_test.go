@@ -2,8 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/vaproh/keydeck/internal/auth"
+	"github.com/vaproh/keydeck/internal/config"
 	"github.com/vaproh/keydeck/internal/store"
 )
 
@@ -30,5 +35,23 @@ func TestNormalizeVersion(t *testing.T) {
 func TestReleaseFilename(t *testing.T) {
 	if got := releaseFilename("1.2.3", "windows-amd64"); got != "1.2.3-windows-amd64.zip" {
 		t.Fatalf("unexpected filename: %s", got)
+	}
+}
+
+func TestAuthConfigIncludesVersion(t *testing.T) {
+	app := &App{cfg: config.Config{TurnstileSiteKey: "site", Version: "1.2.3"}, auth: auth.New(config.Config{}, nil)}
+	router := chi.NewRouter()
+	router.Mount("/", app.AuthRouter())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/config", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["version"] != "1.2.3" || body["site_key"] != "site" {
+		t.Fatalf("unexpected config: %+v", body)
 	}
 }
