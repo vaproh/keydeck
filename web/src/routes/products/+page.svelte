@@ -61,7 +61,7 @@
 				<TableHeader><TableRow><TableHead>Product</TableHead><TableHead>Slug</TableHead><TableHead>Status</TableHead><TableHead class="text-right">Created</TableHead></TableRow></TableHeader>
 				<TableBody>
 					{#each products as product (product.id)}
-						<TableRow class="cursor-pointer" onclick={() => goto(`/products/${product.id}`)}>
+						<TableRow class="cursor-pointer" onclick={() => goto(`/admin/products/${product.id}`)}>
 							<TableCell class="font-medium">{product.name}</TableCell>
 							<TableCell class="font-mono text-xs text-muted-foreground">{product.slug}</TableCell>
 							<TableCell><Badge variant={product.status === 'active' ? 'secondary' : 'outline'}>{product.status}</Badge></TableCell>

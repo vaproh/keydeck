@@ -33,7 +33,7 @@
 		try {
 			session = await me();
 		} catch {
-			await goto('/login');
+			await goto('/admin/login');
 		} finally {
 			ready = true;
 		}
@@ -43,7 +43,7 @@
 		try {
 			await logout();
 		} finally {
-			await goto('/login');
+			await goto('/admin/login');
 		}
 	}
 </script>
