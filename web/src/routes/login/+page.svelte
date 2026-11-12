@@ -63,7 +63,7 @@
 			widgetId = turnstileApi()!.render(container, {
 				sitekey: siteKey,
 				action: 'admin_login',
-				appearance: 'interaction-only',
+				appearance: 'always',
 				theme: 'auto',
 				size: 'flexible',
 				execution: 'render',
@@ -155,7 +155,7 @@
 					</div>
 					<div class="space-y-1.5">
 						<Label>Human check</Label>
-						<div bind:this={container} class="min-h-[65px]"></div>
+						<div bind:this={container}></div>
 						{#if !ready && !error}
 							<p class="text-xs text-muted-foreground">Loading verification…</p>
 						{/if}
