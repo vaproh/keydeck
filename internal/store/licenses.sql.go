@@ -15,7 +15,7 @@ const activateLicense = `-- name: ActivateLicense :one
 UPDATE licenses SET first_activated_at = COALESCE(first_activated_at, $2),
     activation_expires_at = COALESCE(activation_expires_at, $3),
     used_at = COALESCE(used_at, $2)
-WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name
+WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 type ActivateLicenseParams struct {
@@ -50,6 +50,7 @@ func (q *Queries) ActivateLicense(ctx context.Context, arg ActivateLicenseParams
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
@@ -115,10 +116,10 @@ func (q *Queries) CreateActivation(ctx context.Context, arg CreateActivationPara
 const createLicense = `-- name: CreateLicense :one
 INSERT INTO licenses (
     product_id, key_hash, key_last4, plan_name, holder_name, key_type, trial_minutes, validity_days,
-    starts_on_activation, one_time_activation, grace_seconds, limits_json, features_json,
+    starts_on_activation, one_time_activation, grace_seconds, lease_ttl_seconds, limits_json, features_json,
     expires_at, max_activations, notes
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, convert_from($12, 'UTF8')::jsonb, convert_from($13, 'UTF8')::jsonb, $14, $15, $16)
-RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, convert_from($13, 'UTF8')::jsonb, convert_from($14, 'UTF8')::jsonb, $15, $16, $17)
+RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 type CreateLicenseParams struct {
@@ -133,6 +134,7 @@ type CreateLicenseParams struct {
 	StartsOnActivation bool               `json:"starts_on_activation"`
 	OneTimeActivation  bool               `json:"one_time_activation"`
 	GraceSeconds       int32              `json:"grace_seconds"`
+	LeaseTtlSeconds    int32              `json:"lease_ttl_seconds"`
 	ConvertFrom        []byte             `json:"convert_from"`
 	ConvertFrom_2      []byte             `json:"convert_from_2"`
 	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
@@ -153,6 +155,7 @@ func (q *Queries) CreateLicense(ctx context.Context, arg CreateLicenseParams) (L
 		arg.StartsOnActivation,
 		arg.OneTimeActivation,
 		arg.GraceSeconds,
+		arg.LeaseTtlSeconds,
 		arg.ConvertFrom,
 		arg.ConvertFrom_2,
 		arg.ExpiresAt,
@@ -183,12 +186,13 @@ func (q *Queries) CreateLicense(ctx context.Context, arg CreateLicenseParams) (L
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
 
 const extendLicense = `-- name: ExtendLicense :one
-UPDATE licenses SET expires_at = $2, activation_expires_at = $3 WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name
+UPDATE licenses SET expires_at = $2, activation_expires_at = $3 WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 type ExtendLicenseParams struct {
@@ -223,6 +227,7 @@ func (q *Queries) ExtendLicense(ctx context.Context, arg ExtendLicenseParams) (L
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
@@ -254,7 +259,7 @@ func (q *Queries) GetActivation(ctx context.Context, arg GetActivationParams) (A
 }
 
 const getLicense = `-- name: GetLicense :one
-SELECT id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name FROM licenses WHERE id = $1
+SELECT id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds FROM licenses WHERE id = $1
 `
 
 func (q *Queries) GetLicense(ctx context.Context, id int64) (License, error) {
@@ -283,12 +288,13 @@ func (q *Queries) GetLicense(ctx context.Context, id int64) (License, error) {
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
 
 const getLicenseByHash = `-- name: GetLicenseByHash :one
-SELECT id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name FROM licenses WHERE key_hash = $1
+SELECT id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds FROM licenses WHERE key_hash = $1
 `
 
 func (q *Queries) GetLicenseByHash(ctx context.Context, keyHash string) (License, error) {
@@ -317,6 +323,7 @@ func (q *Queries) GetLicenseByHash(ctx context.Context, keyHash string) (License
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
@@ -356,7 +363,7 @@ func (q *Queries) ListActivations(ctx context.Context, licenseID int64) ([]Activ
 }
 
 const listLicenses = `-- name: ListLicenses :many
-SELECT l.id, l.product_id, l.key_hash, l.key_last4, l.plan_name, l.key_type, l.trial_minutes, l.validity_days, l.starts_on_activation, l.one_time_activation, l.grace_seconds, l.first_activated_at, l.activation_expires_at, l.used_at, l.limits_json, l.features_json, l.expires_at, l.max_activations, l.status, l.notes, l.created_at, l.holder_name, p.slug AS product_slug,
+SELECT l.id, l.product_id, l.key_hash, l.key_last4, l.plan_name, l.key_type, l.trial_minutes, l.validity_days, l.starts_on_activation, l.one_time_activation, l.grace_seconds, l.first_activated_at, l.activation_expires_at, l.used_at, l.limits_json, l.features_json, l.expires_at, l.max_activations, l.status, l.notes, l.created_at, l.holder_name, l.lease_ttl_seconds, p.slug AS product_slug,
     (SELECT count(*) FROM activations a WHERE a.license_id = l.id AND a.revoked_at IS NULL) AS activation_count
 FROM licenses l JOIN products p ON p.id = l.product_id
 WHERE ($1::bigint = 0 OR l.product_id = $1)
@@ -392,6 +399,7 @@ type ListLicensesRow struct {
 	Notes               string             `json:"notes"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	HolderName          string             `json:"holder_name"`
+	LeaseTtlSeconds     int32              `json:"lease_ttl_seconds"`
 	ProductSlug         string             `json:"product_slug"`
 	ActivationCount     int64              `json:"activation_count"`
 }
@@ -428,6 +436,7 @@ func (q *Queries) ListLicenses(ctx context.Context, arg ListLicensesParams) ([]L
 			&i.Notes,
 			&i.CreatedAt,
 			&i.HolderName,
+			&i.LeaseTtlSeconds,
 			&i.ProductSlug,
 			&i.ActivationCount,
 		); err != nil {
@@ -443,7 +452,7 @@ func (q *Queries) ListLicenses(ctx context.Context, arg ListLicensesParams) ([]L
 
 const resetLicense = `-- name: ResetLicense :one
 UPDATE licenses SET first_activated_at = NULL, activation_expires_at = NULL, used_at = NULL,
-    status = 'active' WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name
+    status = 'active' WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 func (q *Queries) ResetLicense(ctx context.Context, id int64) (License, error) {
@@ -472,6 +481,7 @@ func (q *Queries) ResetLicense(ctx context.Context, id int64) (License, error) {
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }
@@ -519,20 +529,21 @@ const updateLicense = `-- name: UpdateLicense :one
 UPDATE licenses SET plan_name = $2, holder_name = $3,
     limits_json = convert_from($4, 'UTF8')::jsonb,
     features_json = convert_from($5, 'UTF8')::jsonb,
-    max_activations = $6, notes = $7, grace_seconds = $8, expires_at = $9
-WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name
+    max_activations = $6, notes = $7, grace_seconds = $8, lease_ttl_seconds = $9, expires_at = $10
+WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 type UpdateLicenseParams struct {
-	ID             int64              `json:"id"`
-	PlanName       string             `json:"plan_name"`
-	HolderName     string             `json:"holder_name"`
-	ConvertFrom    []byte             `json:"convert_from"`
-	ConvertFrom_2  []byte             `json:"convert_from_2"`
-	MaxActivations int32              `json:"max_activations"`
-	Notes          string             `json:"notes"`
-	GraceSeconds   int32              `json:"grace_seconds"`
-	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	ID              int64              `json:"id"`
+	PlanName        string             `json:"plan_name"`
+	HolderName      string             `json:"holder_name"`
+	ConvertFrom     []byte             `json:"convert_from"`
+	ConvertFrom_2   []byte             `json:"convert_from_2"`
+	MaxActivations  int32              `json:"max_activations"`
+	Notes           string             `json:"notes"`
+	GraceSeconds    int32              `json:"grace_seconds"`
+	LeaseTtlSeconds int32              `json:"lease_ttl_seconds"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
 }
 
 func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (License, error) {
@@ -545,6 +556,7 @@ func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (L
 		arg.MaxActivations,
 		arg.Notes,
 		arg.GraceSeconds,
+		arg.LeaseTtlSeconds,
 		arg.ExpiresAt,
 	)
 	var i License
@@ -571,6 +583,7 @@ func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (L
 		&i.Notes,
 		&i.CreatedAt,
 		&i.HolderName,
+		&i.LeaseTtlSeconds,
 	)
 	return i, err
 }

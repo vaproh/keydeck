@@ -221,7 +221,11 @@ func (s *Service) license(ctx context.Context, req ActivateRequest) (store.Licen
 }
 
 func (s *Service) claims(row store.License, product store.Product, installation string, now, expiry time.Time, hasExpiry, lifetime bool) (map[string]any, error) {
-	leaseExpiry := now.Add(24 * time.Hour)
+	leaseTTL := time.Duration(row.LeaseTtlSeconds) * time.Second
+	if leaseTTL <= 0 {
+		leaseTTL = 24 * time.Hour
+	}
+	leaseExpiry := now.Add(leaseTTL)
 	var licenseExpiry *int64
 	var remaining *int64
 	var graceUntil *int64

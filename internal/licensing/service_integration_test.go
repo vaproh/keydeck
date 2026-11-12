@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -60,7 +61,7 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 	license, err := store.New(pool).CreateLicense(ctx, store.CreateLicenseParams{
 		ProductID: product.ID, KeyHash: hash, KeyLast4: last4, PlanName: "Trial", HolderName: "Test holder",
 		KeyType: "trial", TrialMinutes: &minutes, StartsOnActivation: true, OneTimeActivation: true,
-		GraceSeconds: 0, ConvertFrom: []byte(`{"max_accounts":3}`), ConvertFrom_2: []byte(`["warmup"]`),
+		GraceSeconds: 0, LeaseTtlSeconds: 60, ConvertFrom: []byte(`{"max_accounts":3}`), ConvertFrom_2: []byte(`["warmup"]`),
 		ExpiresAt: expires, MaxActivations: 1,
 	})
 	if err != nil {
@@ -83,6 +84,23 @@ func TestActivateTrialWithPostgres(t *testing.T) {
 	}
 	if *first.RemainingSeconds > 15*60 || *first.RemainingSeconds < 14*60 {
 		t.Fatalf("trial clock not server-authoritative: %d", *first.RemainingSeconds)
+	}
+	parts := strings.Split(first.Lease, ".")
+	if len(parts) != 2 {
+		t.Fatalf("unexpected lease format: %q", first.Lease)
+	}
+	claimsRaw, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(claimsRaw, &claims); err != nil {
+		t.Fatal(err)
+	}
+	leaseExpiry, _ := claims["lease_expires_at"].(float64)
+	serverNow, _ := claims["server_now"].(float64)
+	if int64(leaseExpiry-serverNow) != 60 {
+		t.Fatalf("lease TTL not applied: expiry=%v now=%v", leaseExpiry, serverNow)
 	}
 
 	if _, err := service.Activate(ctx, ActivateRequest{

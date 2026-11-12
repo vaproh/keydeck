@@ -11,7 +11,9 @@
 	import { Copy, KeyRound } from '@lucide/svelte';
 
 	type Product = { id: number; slug: string; name: string; status: string };
-	type Preset = { id: number; name: string; limits_json: unknown; features_json: unknown; validity_days: number | null; max_activations: number };
+	type Preset = { id: number; name: string; limits: Record<string, number>; features: string[]; validity_days: number | null; max_activations: number };
+	type LimitDef = { id: number; key: string; label: string };
+	type FeatureDef = { id: number; key: string; label: string };
 	type License = {
 		id: number; product_id: number; key_last4: string; plan_name: string; holder_name: string; key_type: string;
 		expires_at: string; activation_expires_at: string | null; status: string; max_activations: number;
@@ -20,14 +22,18 @@
 	let products = $state<Product[]>([]);
 	let licenses = $state<License[]>([]);
 	let presets = $state<Preset[]>([]);
+	let limitDefs = $state<LimitDef[]>([]);
+	let featureDefs = $state<FeatureDef[]>([]);
+	let limitValues = $state<Record<string, number>>({});
+	let featureValues = $state<Record<string, boolean>>({});
 	let productId = $state('');
 	let error = $state('');
 	let rawKey = $state('');
 	let busy = $state(false);
 	let form = $state({
 		preset_id: 0, plan_name: 'Personal', holder_name: '', key_type: 'timed', trial_minutes: 15, validity_days: 30,
-		starts_on_activation: true, one_time_activation: false, grace_seconds: 86400,
-		max_activations: 1, limits: '{"max_accounts": 25}', features: '["warmup"]', notes: ''
+		starts_on_activation: true, one_time_activation: false, grace_seconds: 86400, lease_ttl_hours: 24,
+		max_activations: 1, notes: ''
 	});
 
 	async function loadProducts() {
@@ -38,10 +44,16 @@
 	async function loadPresets() {
 		if (!productId) {
 			presets = [];
+			limitDefs = [];
+			featureDefs = [];
 			return;
 		}
-		const data = await api.get<{ presets: Preset[] }>(`/admin/products/${productId}`);
+		const data = await api.get<{ presets: Preset[]; limits: LimitDef[]; features: FeatureDef[] }>(`/admin/products/${productId}`);
 		presets = data.presets;
+		limitDefs = data.limits;
+		featureDefs = data.features;
+		limitValues = Object.fromEntries(limitDefs.map((def) => [def.key, 0]));
+		featureValues = Object.fromEntries(featureDefs.map((def) => [def.key, false]));
 	}
 	async function loadLicenses() {
 		const query = productId ? `?product_id=${productId}` : '';
@@ -50,12 +62,16 @@
 	}
 	function applyPreset() {
 		const preset = presets.find((p) => p.id === Number(form.preset_id));
-		if (!preset) return;
+		if (!preset) {
+			for (const def of limitDefs) limitValues[def.key] = 0;
+			for (const def of featureDefs) featureValues[def.key] = false;
+			return;
+		}
 		form.plan_name = preset.name;
 		form.max_activations = preset.max_activations;
 		if (preset.validity_days) form.validity_days = preset.validity_days;
-		form.limits = JSON.stringify(preset.limits_json ?? {});
-		form.features = JSON.stringify(preset.features_json ?? []);
+		for (const def of limitDefs) limitValues[def.key] = Number(preset.limits?.[def.key] ?? 0);
+		for (const def of featureDefs) featureValues[def.key] = (preset.features ?? []).includes(def.key);
 	}
 	async function changeProduct() {
 		form.preset_id = 0;
@@ -87,8 +103,11 @@
 			const body: Record<string, unknown> = {
 				preset_id: form.preset_id, plan_name: form.plan_name, holder_name: form.holder_name, key_type: form.key_type, starts_on_activation: form.starts_on_activation,
 				one_time_activation: form.one_time_activation, grace_seconds: form.grace_seconds,
-				max_activations: form.max_activations, limits: JSON.parse(form.limits),
-				features: JSON.parse(form.features), notes: form.notes
+				lease_ttl_seconds: Math.max(60, Math.round(form.lease_ttl_hours * 3600)),
+				max_activations: form.max_activations,
+				limits: Object.fromEntries(limitDefs.map((def) => [def.key, Number(limitValues[def.key]) || 0])),
+				features: featureDefs.filter((def) => featureValues[def.key]).map((def) => def.key),
+				notes: form.notes
 			};
 			if (form.key_type === 'trial') body.trial_minutes = form.trial_minutes;
 			if (form.key_type === 'timed') body.validity_days = form.validity_days;
@@ -179,7 +198,11 @@
 							</select>
 						</div>
 					{/if}
-					<div class="space-y-1.5"><Label for="plan">Plan name</Label><Input id="plan" bind:value={form.plan_name} required /></div>
+					{#if !form.preset_id}
+						<div class="space-y-1.5"><Label for="plan">Plan name</Label><Input id="plan" bind:value={form.plan_name} required /></div>
+					{:else}
+						<div class="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"><span class="text-muted-foreground">Plan: </span>{form.plan_name}</div>
+					{/if}
 					<div class="space-y-1.5"><Label for="holder">Assigned to</Label><Input id="holder" bind:value={form.holder_name} placeholder="Customer or machine name" maxlength={120} /></div>
 					<div class="space-y-1.5"><Label for="type">Type</Label>
 						<select id="type" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" bind:value={form.key_type}>
@@ -196,8 +219,27 @@
 						<div class="space-y-1.5"><Label for="acts">Activations</Label><Input id="acts" type="number" min="1" bind:value={form.max_activations} /></div>
 						<div class="space-y-1.5"><Label for="grace">Grace seconds</Label><Input id="grace" type="number" min="0" bind:value={form.grace_seconds} /></div>
 					</div>
-					<div class="space-y-1.5"><Label for="limits">Limits JSON</Label><textarea id="limits" class="min-h-16 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={form.limits}></textarea></div>
-					<div class="space-y-1.5"><Label for="features">Features JSON</Label><textarea id="features" class="min-h-14 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={form.features}></textarea></div>
+					<div class="space-y-1.5"><Label for="lease">Lease TTL (hours)</Label><Input id="lease" type="number" min="0.1" max="720" step="0.1" bind:value={form.lease_ttl_hours} /></div>
+					{#if limitDefs.length}
+						<fieldset class="space-y-2">
+							<legend class="text-sm font-medium">Limits</legend>
+							<div class="grid grid-cols-2 gap-2">
+								{#each limitDefs as def (def.id)}
+									<div class="space-y-1.5"><Label for={`limit-${def.key}`}>{def.label || def.key}</Label><Input id={`limit-${def.key}`} type="number" min="0" bind:value={limitValues[def.key]} /></div>
+								{/each}
+							</div>
+						</fieldset>
+					{/if}
+					{#if featureDefs.length}
+						<fieldset class="space-y-2">
+							<legend class="text-sm font-medium">Features</legend>
+							<div class="grid grid-cols-2 gap-2">
+								{#each featureDefs as def (def.id)}
+									<label class="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-sm"><input type="checkbox" bind:checked={featureValues[def.key]} /> {def.label || def.key}</label>
+								{/each}
+							</div>
+						</fieldset>
+					{/if}
 					<Button class="w-full" type="submit" disabled={busy || !productId}>{busy ? 'Issuing…' : 'Issue key'}</Button>
 				</form>
 			</CardContent>

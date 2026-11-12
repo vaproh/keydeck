@@ -1,0 +1,2 @@
+ALTER TABLE licenses
+    ADD COLUMN IF NOT EXISTS lease_ttl_seconds INT NOT NULL DEFAULT 86400;

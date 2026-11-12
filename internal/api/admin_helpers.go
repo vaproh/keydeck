@@ -41,7 +41,7 @@ func licenseJSON(l store.License) map[string]any {
 		"holder_name": l.HolderName,
 		"key_type":    l.KeyType, "trial_minutes": l.TrialMinutes, "validity_days": l.ValidityDays,
 		"starts_on_activation": l.StartsOnActivation, "one_time_activation": l.OneTimeActivation,
-		"grace_seconds": l.GraceSeconds, "first_activated_at": tsPtr(l.FirstActivatedAt),
+		"grace_seconds": l.GraceSeconds, "lease_ttl_seconds": l.LeaseTtlSeconds, "first_activated_at": tsPtr(l.FirstActivatedAt),
 		"activation_expires_at": tsPtr(l.ActivationExpiresAt), "used_at": tsPtr(l.UsedAt),
 		"limits": rawOr(l.LimitsJson, "{}"), "features": rawOr(l.FeaturesJson, "[]"),
 		"expires_at": tsPtr(l.ExpiresAt), "max_activations": l.MaxActivations, "status": l.Status,
@@ -69,4 +69,12 @@ func publicFromEnv(product, kind string) string {
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey))
+}
+
+func presetJSON(p store.PlanPreset) map[string]any {
+	return map[string]any{
+		"id": p.ID, "product_id": p.ProductID, "name": p.Name,
+		"limits": rawOr(p.LimitsJson, "{}"), "features": rawOr(p.FeaturesJson, "[]"),
+		"validity_days": p.ValidityDays, "max_activations": p.MaxActivations,
+	}
 }
