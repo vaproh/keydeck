@@ -127,6 +127,8 @@ Migrations are additive and forward-only. Never edit an applied migration.
 
 ## UI direction
 
+- Do not expose raw JSON as the primary editor for known product limits or features. Render a number input per limit and a checkbox per feature. Keep JSON available only for API calls or unknown variables.
+
 The admin is a private control room, not a marketing site. Use the existing stone/pine/terracotta palette, shadcn-svelte components, Lucide icons, and restrained Motion transitions. Keep dense operational tables readable. Respect reduced motion.
 
 ## Security boundaries

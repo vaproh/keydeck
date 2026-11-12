@@ -55,7 +55,7 @@ In the admin panel:
 3. Omit the public keys and Keydeck generates the license and update signing keys server-side; or register existing public keys.
 4. Add the product limits.
 5. Add the product features.
-6. Create a plan preset for each common shape.
+6. Create a plan preset for each common shape. The admin UI turns product limits into number inputs and features into checkboxes; the API still accepts `limits` and `features` JSON.
 7. Issue a test key.
 
 The admin API equivalents:

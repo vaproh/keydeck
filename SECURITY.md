@@ -2,7 +2,7 @@
 
 Do not open a public issue for a vulnerability.
 
-Email the maintainer or use GitHub's private vulnerability reporting. Include reproduction steps and the affected version.
+Email the maintainer or use GitHub's private vulnerability reporting. Include reproduction steps and the affected version (current stable: 1.2.2).
 
 ## Boundaries
 

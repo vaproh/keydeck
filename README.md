@@ -30,6 +30,8 @@ Keydeck is a self-hosted license server, OTA update service, and private admin p
 | OTA | `8081` | update check, signed manifest, artifact download |
 | Admin | `8082` | private SvelteKit control panel and admin API |
 
+Plan presets are edited with structured controls: each product limit becomes a number input and each product feature becomes a checkbox. Raw JSON is not required in the preset UI.
+
 Postgres is the source of truth for products, keys, activations, releases, sessions, and audit events.
 
 ## Why Keydeck
