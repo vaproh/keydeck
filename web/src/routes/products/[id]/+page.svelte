@@ -107,7 +107,7 @@
 			<p class="mt-1 font-mono text-xs text-muted-foreground">{data?.product.slug ?? id} · {data?.key?.key_prefix ?? 'no prefix'}</p>
 		</div>
 		<div class="flex gap-2">
-			<Button variant="outline" onclick={() => goto(`/keys?product=${id}`)}>Issue a key</Button>
+			<Button variant="outline" onclick={() => goto(`/admin/keys?product=${id}`)}>Issue a key</Button>
 			<Badge variant={data?.product.status === 'active' ? 'secondary' : 'outline'}>{data?.product.status ?? '—'}</Badge>
 		</div>
 	</div>
@@ -164,7 +164,7 @@
 						<TableHeader><TableRow><TableHead>Plan</TableHead><TableHead>Holder</TableHead><TableHead>Key</TableHead><TableHead>Activations</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
 						<TableBody>
 							{#each data.recent_keys as key (key.id)}
-								<TableRow class="cursor-pointer" onclick={() => goto(`/keys/${key.id}`)}>
+								<TableRow class="cursor-pointer" onclick={() => goto(`/admin/keys/${key.id}`)}>
 									<TableCell class="font-medium">{key.plan_name}</TableCell><TableCell class="text-xs">{key.holder_name || '—'}</TableCell>
 									<TableCell class="font-mono text-xs text-muted-foreground">•••• {key.key_last4}</TableCell>
 									<TableCell class="text-xs">{key.activation_count}/{key.max_activations}</TableCell>
