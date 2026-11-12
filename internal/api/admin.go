@@ -26,13 +26,16 @@ func (a *App) AdminRouter() http.Handler {
 			r.Post("/products/{id}/features", a.addFeature)
 			r.Delete("/products/{id}/features/{featureID}", a.deleteFeature)
 			r.Post("/products/{id}/presets", a.createPreset)
+			r.Patch("/products/{id}/presets/{presetID}", a.updatePreset)
 			r.Delete("/products/{id}/presets/{presetID}", a.deletePreset)
+			r.Get("/products/{id}/overview", a.productOverview)
 			r.Post("/products/{id}/licenses", a.createLicense)
 
 			r.Get("/licenses", a.listLicenses)
 			r.Get("/licenses/{id}", a.getLicense)
 			r.Patch("/licenses/{id}", a.updateLicense)
 			r.Post("/licenses/{id}/{action}", a.licenseAction)
+			r.Post("/licenses/{id}/activations/{activationID}/revoke", a.revokeActivation)
 
 			r.Get("/releases", a.listReleases)
 			r.Post("/releases", a.uploadRelease)

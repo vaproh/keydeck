@@ -29,3 +29,8 @@ DELETE FROM admin_sessions WHERE id = $1;
 
 -- name: PruneSessions :exec
 DELETE FROM admin_sessions WHERE expires_at < now();
+
+-- name: UpdatePreset :one
+UPDATE plan_presets SET name = $3, limits_json = convert_from($4, 'UTF8')::jsonb,
+    features_json = convert_from($5, 'UTF8')::jsonb, validity_days = $6, max_activations = $7
+WHERE id = $1 AND product_id = $2 RETURNING *;

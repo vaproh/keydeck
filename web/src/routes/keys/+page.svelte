@@ -15,7 +15,7 @@
 	type LimitDef = { id: number; key: string; label: string };
 	type FeatureDef = { id: number; key: string; label: string };
 	type License = {
-		id: number; product_id: number; key_last4: string; plan_name: string; holder_name: string; key_type: string;
+		id: number; product_id: number; key_last4: string; plan_name: string; holder_name: string; key_type: string; display_status: string;
 		expires_at: string; activation_expires_at: string | null; status: string; max_activations: number;
 		activation_count: number; product_slug: string;
 	};
@@ -165,9 +165,9 @@
 				<TableBody>
 					{#each licenses as row (row.id)}
 						<TableRow>
-							<TableCell class="font-medium">{row.plan_name}</TableCell>
+							<TableCell class="font-medium"><a href={`/admin/keys/${row.id}`} class="hover:underline">{row.plan_name}</a></TableCell>
 							<TableCell class="text-xs">{#if row.holder_name}{row.holder_name}{:else}<span class="text-muted-foreground">Unassigned</span>{/if}</TableCell>
-							<TableCell><Badge variant="outline">{row.key_type}</Badge></TableCell>
+							<TableCell><div class="flex gap-1"><Badge variant="outline">{row.key_type}</Badge><Badge variant={row.display_status === 'active' ? 'secondary' : 'outline'}>{row.display_status}</Badge></div></TableCell>
 							<TableCell class="font-mono text-xs text-muted-foreground">•••• {row.key_last4}</TableCell>
 							<TableCell class="text-xs">{row.activation_count}/{row.max_activations}</TableCell>
 							<TableCell class="text-xs text-muted-foreground">{row.key_type === 'lifetime' ? 'Never' : new Date(row.activation_expires_at ?? row.expires_at).toLocaleString()}</TableCell>

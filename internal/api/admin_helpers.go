@@ -49,6 +49,25 @@ func licenseJSON(l store.License) map[string]any {
 	}
 }
 
+func licenseStatus(l store.License, activationCount int64) string {
+	if l.Status == "revoked" {
+		return "revoked"
+	}
+	if l.KeyType != "lifetime" {
+		expiry := l.ExpiresAt
+		if l.ActivationExpiresAt.Valid {
+			expiry = l.ActivationExpiresAt
+		}
+		if expiry.Valid && !expiry.Time.After(time.Now().UTC()) {
+			return "expired"
+		}
+	}
+	if activationCount >= int64(l.MaxActivations) {
+		return "exhausted"
+	}
+	return "active"
+}
+
 func (a *App) audit(ctx context.Context, actor, action string, productID *int64, target string, metadata map[string]any) {
 	raw, _ := json.Marshal(metadata)
 	_ = a.q.InsertAudit(ctx, store.InsertAuditParams{ProductID: productID, Actor: actor, Action: action, Target: target, ConvertFrom: raw})
@@ -77,4 +96,12 @@ func presetJSON(p store.PlanPreset) map[string]any {
 		"limits": rawOr(p.LimitsJson, "{}"), "features": rawOr(p.FeaturesJson, "[]"),
 		"validity_days": p.ValidityDays, "max_activations": p.MaxActivations,
 	}
+}
+
+func presetJSONList(rows []store.PlanPreset) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, presetJSON(row))
+	}
+	return out
 }

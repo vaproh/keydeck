@@ -64,3 +64,9 @@ WHERE license_id = $1 AND installation_hash = $2;
 
 -- name: RevokeActivation :exec
 UPDATE activations SET revoked_at = now() WHERE license_id = $1 AND installation_hash = $2 AND revoked_at IS NULL;
+
+-- name: GetActivationByID :one
+SELECT * FROM activations WHERE id = $1 AND license_id = $2;
+
+-- name: RevokeActivationByID :exec
+UPDATE activations SET revoked_at = now() WHERE id = $1 AND license_id = $2 AND revoked_at IS NULL;

@@ -258,6 +258,32 @@ func (q *Queries) GetActivation(ctx context.Context, arg GetActivationParams) (A
 	return i, err
 }
 
+const getActivationByID = `-- name: GetActivationByID :one
+SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at FROM activations WHERE id = $1 AND license_id = $2
+`
+
+type GetActivationByIDParams struct {
+	ID        int64 `json:"id"`
+	LicenseID int64 `json:"license_id"`
+}
+
+func (q *Queries) GetActivationByID(ctx context.Context, arg GetActivationByIDParams) (Activation, error) {
+	row := q.db.QueryRow(ctx, getActivationByID, arg.ID, arg.LicenseID)
+	var i Activation
+	err := row.Scan(
+		&i.ID,
+		&i.LicenseID,
+		&i.InstallationHash,
+		&i.MachineHash,
+		&i.AppVersion,
+		&i.Ip,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getLicense = `-- name: GetLicense :one
 SELECT id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds FROM licenses WHERE id = $1
 `
@@ -497,6 +523,20 @@ type RevokeActivationParams struct {
 
 func (q *Queries) RevokeActivation(ctx context.Context, arg RevokeActivationParams) error {
 	_, err := q.db.Exec(ctx, revokeActivation, arg.LicenseID, arg.InstallationHash)
+	return err
+}
+
+const revokeActivationByID = `-- name: RevokeActivationByID :exec
+UPDATE activations SET revoked_at = now() WHERE id = $1 AND license_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeActivationByIDParams struct {
+	ID        int64 `json:"id"`
+	LicenseID int64 `json:"license_id"`
+}
+
+func (q *Queries) RevokeActivationByID(ctx context.Context, arg RevokeActivationByIDParams) error {
+	_, err := q.db.Exec(ctx, revokeActivationByID, arg.ID, arg.LicenseID)
 	return err
 }
 
