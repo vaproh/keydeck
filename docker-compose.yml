@@ -46,34 +46,15 @@ services:
     volumes:
       - artifacts:/data/artifacts
       - signing_keys:/data/keys
-    expose:
-      - '8080'
-      - '8081'
-      - '8082'
+    ports:
+      - '8080:8080'
+      - '8081:8081'
+      - '8082:8082'
     healthcheck:
       test: ['CMD', '/keydeck', 'healthcheck']
       interval: 10s
       timeout: 3s
       retries: 10
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    depends_on:
-      keydeck:
-        condition: service_healthy
-    ports:
-      - '80:80'
-      - '443:443'
-    environment:
-      LICENSE_DOMAIN: ${LICENSE_DOMAIN:?set LICENSE_DOMAIN}
-      OTA_DOMAIN: ${OTA_DOMAIN:?set OTA_DOMAIN}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
-      ADMIN_ALLOW: ${ADMIN_ALLOW:?set ADMIN_ALLOW to your public IP or CIDR}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
 
   watchtower:
     image: containrrr/watchtower:latest
@@ -89,5 +70,3 @@ volumes:
   pgdata:
   artifacts:
   signing_keys:
-  caddy_data:
-  caddy_config:

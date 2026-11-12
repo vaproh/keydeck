@@ -96,7 +96,7 @@ jobs:
           mkdir -p "release/bundle/web"
           cp -R web/build "release/bundle/web/build"
           cp dist/keydeck "release/bundle/keydeck"
-          cp docker-compose.yml Caddyfile .env.example README.md LICENSE PRD.md AGENTS.md Dockerfile.release "release/bundle/"
+          cp docker-compose.yml .env.example README.md LICENSE PRD.md AGENTS.md Dockerfile.release "release/bundle/"
           mv "release/bundle/Dockerfile.release" "release/bundle/Dockerfile"
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             image_tag="${GITHUB_REF_NAME#v}"

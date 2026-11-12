@@ -150,7 +150,7 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 - One Go binary with embedded frontend.
 - Three listeners: license, OTA, admin.
 - Postgres 18.
-- Caddy for TLS and host routing.
+- HAProxy/TierHive for TLS and host routing.
 - Docker Compose only; no systemd.
 - Watchtower pulls `latest` after a release.
 - VPS release bundle includes compiled binary and frontend; no build toolchain required.
@@ -175,7 +175,7 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 - A trial cannot be reused by another installation.
 - A revoked key fails on the next heartbeat.
 - A clock change on the client does not extend validity.
-- The admin panel is unreachable outside `ADMIN_ALLOW`.
+- The admin panel is protected by login, Turnstile, Argon2id, TOTP, and a network ACL where available.
 - CI passes on every PR and tag.
 - Release notes and assets are generated without manual editing.
 
