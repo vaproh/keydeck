@@ -44,6 +44,10 @@ The stable bundle points Compose at the `latest` image. Watchtower pulls it on a
 
 The beta bundle pins the exact beta image, so a beta host is not moved onto stable by Watchtower. To return a beta host to stable, replace the image tag with `latest`.
 
+## Patch releases
+
+A necessary fix is a patch version such as `v1.2.2`. A suffix like `v1.2.0-1` is a SemVer pre-release and sorts before `1.2.0`, so OTA clients will not treat it as an upgrade. Never reuse a version; increment the patch instead.
+
 ## Rollback
 
 Use the previous image tag in `docker-compose.yml` and restart the app container. Database migrations are forward-only; keep a database backup before a release that adds columns.

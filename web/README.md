@@ -1,54 +1,22 @@
-# sv
+# Keydeck admin
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit 3 + Svelte 5 + TypeScript control panel for Keydeck.
 
-## Creating a project
+## Development
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+pnpm check
+pnpm build
 ```
 
-To recreate this project with the same configuration:
+The app is served at `/admin` by the Go binary. Vite proxies `/api` to the admin listener during development.
 
-```sh
-# recreate this project
-pnpm dlx sv@1.3.0 create --template minimal --types ts --add prettier eslint tailwindcss="plugins:none" sveltekit-adapter="adapter:static" --install pnpm web
-```
+## UI rules
 
-## Adding features
-
-Add features to your project with `sv add`:
-
-```sh
-npx sv add
-```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
+- Use shadcn-svelte components, Lucide icons, Tailwind tokens, and restrained Motion.
+- Product limits render as number inputs and features as checkboxes in plan presets.
+- Do not require raw JSON for known product variables.
+- Keep the stone/pine/terracotta palette and support light/dark mode.
+- Run `pnpm check` and `pnpm build` before committing.

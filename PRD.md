@@ -140,6 +140,7 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 - Login rate limit.
 - Product switcher.
 - Product limits, features, and plan presets.
+- Plan presets expose product-defined limits as number inputs and features as checkboxes; raw JSON is only an API detail.
 - Issue, inspect, extend, reset, and revoke keys.
 - Release upload with SHA-256 and notes.
 - Audit log for privileged actions.

@@ -29,16 +29,19 @@
 	let limitKey = $state('');
 	let featureKey = $state('');
 	let presetName = $state('');
-	let presetLimits = $state('{"max_accounts": 25}');
-	let presetFeatures = $state('["warmup"]');
+	let presetLimitValues = $state<Record<string, number>>({});
+	let presetFeatureValues = $state<string[]>([]);
 	let presetValidity = $state(30);
 	let presetActivations = $state(1);
-	let editingPreset = $state<{ id: number; name: string; limits: string; features: string; validity_days: number; max_activations: number } | null>(null);
+	let editingPreset = $state<{ id: number; name: string; limits: Record<string, number>; features: string[]; validity_days: number; max_activations: number } | null>(null);
 	const id = $derived(page.params.id);
 
 	async function load() {
 		try {
 			data = await api.get<Payload>(`/admin/products/${id}/overview`);
+			const nextLimits: Record<string, number> = {};
+			for (const item of data.limits) nextLimits[item.key] = presetLimitValues[item.key] ?? 0;
+			presetLimitValues = nextLimits;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not load product.';
 		}
@@ -60,16 +63,25 @@
 	async function addPreset(event: SubmitEvent) {
 		event.preventDefault();
 		await api.post(`/admin/products/${id}/presets`, {
-			name: presetName, limits: JSON.parse(presetLimits), features: JSON.parse(presetFeatures),
+			name: presetName,
+			limits: Object.fromEntries(Object.entries(presetLimitValues).filter(([, value]) => value > 0)),
+			features: presetFeatureValues,
 			validity_days: presetValidity, max_activations: presetActivations
 		});
 		presetName = '';
+		presetFeatureValues = [];
+		presetLimitValues = Object.fromEntries((data?.limits ?? []).map((item) => [item.key, 0]));
 		await load();
 	}
 	function startPresetEdit(preset: Preset) {
+		const limits: Record<string, number> = {};
+		for (const item of data?.limits ?? []) limits[item.key] = preset.limits[item.key] ?? 0;
+		for (const [key, value] of Object.entries(preset.limits)) {
+			if (!(key in limits)) limits[key] = value;
+		}
 		editingPreset = {
-			id: preset.id, name: preset.name, limits: JSON.stringify(preset.limits, null, 2),
-			features: JSON.stringify(preset.features), validity_days: preset.validity_days ?? 30,
+			id: preset.id, name: preset.name, limits,
+			features: [...preset.features], validity_days: preset.validity_days ?? 30,
 			max_activations: preset.max_activations
 		};
 	}
@@ -77,8 +89,9 @@
 		event.preventDefault();
 		if (!editingPreset) return;
 		await api.patch(`/admin/products/${id}/presets/${editingPreset.id}`, {
-			name: editingPreset.name, limits: JSON.parse(editingPreset.limits),
-			features: JSON.parse(editingPreset.features), validity_days: editingPreset.validity_days,
+			name: editingPreset.name,
+			limits: Object.fromEntries(Object.entries(editingPreset.limits).filter(([, value]) => value > 0)),
+			features: editingPreset.features, validity_days: editingPreset.validity_days,
 			max_activations: editingPreset.max_activations
 		});
 		editingPreset = null;
@@ -218,20 +231,65 @@
 										<Input type="number" min="1" bind:value={editingPreset.validity_days} placeholder="Days" />
 										<Input type="number" min="1" bind:value={editingPreset.max_activations} placeholder="Activations" />
 									</div>
-									<textarea class="min-h-16 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={editingPreset.limits}></textarea>
-									<textarea class="min-h-12 w-full rounded-md border border-input bg-background p-2 font-mono text-xs" bind:value={editingPreset.features}></textarea>
+									{#if data.limits.length}
+										<div class="space-y-1">
+											<p class="text-xs font-medium">Limits</p>
+											<div class="grid grid-cols-2 gap-2">
+												{#each data.limits as item (item.id)}
+													<label class="space-y-1 text-[11px] text-muted-foreground">{item.key}<Input type="number" min="0" bind:value={editingPreset.limits[item.key]} /></label>
+												{/each}
+											</div>
+										</div>
+									{/if}
+									{#if data.features.length}
+										<div class="space-y-1">
+											<p class="text-xs font-medium">Features</p>
+											<div class="flex flex-wrap gap-2">
+												{#each data.features as item (item.id)}
+													<label class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px]"><input type="checkbox" value={item.key} bind:group={editingPreset.features} /> {item.key}</label>
+												{/each}
+											</div>
+										</div>
+									{/if}
 									<div class="flex gap-2"><Button type="submit" variant="outline">Save</Button><Button type="button" variant="ghost" onclick={() => (editingPreset = null)}>Cancel</Button></div>
 								</form>
 							{:else}
 								<div class="rounded-lg border border-border p-3">
 									<div class="flex items-start justify-between gap-2"><div><p class="text-sm font-medium">{preset.name}</p><p class="mt-1 text-xs text-muted-foreground">{preset.validity_days ?? '—'} days · {preset.max_activations} activation(s)</p></div><div class="flex gap-1"><button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => startPresetEdit(preset)}>Edit</button><button class="text-xs text-destructive hover:underline" onclick={() => deletePreset(preset.id)}>Delete</button></div></div>
-									<p class="mt-2 text-xs text-muted-foreground">Limits {JSON.stringify(preset.limits)}</p>
+									<p class="mt-2 text-xs text-muted-foreground">Limits {Object.entries(preset.limits).map(([key, value]) => `${key}: ${value}`).join(' · ') || 'none'}</p>
 									<p class="text-xs text-muted-foreground">Features {preset.features.join(', ') || 'none'}</p>
 								</div>
 							{/if}
 						{:else}<p class="text-sm text-muted-foreground">No presets yet.</p>{/each}
 					</div>
-					<form class="grid gap-2 sm:grid-cols-5" onsubmit={addPreset}><Input bind:value={presetName} placeholder="Preset name" required /><Input type="number" min="1" bind:value={presetValidity} placeholder="Days" /><Input type="number" min="1" bind:value={presetActivations} placeholder="Activations" /><Input bind:value={presetLimits} placeholder="max_accounts: 25" /><Input bind:value={presetFeatures} placeholder="warmup" /><Button type="submit" variant="outline" class="sm:col-span-5">Save preset</Button></form>
+					<form class="space-y-3 rounded-lg border border-border p-3" onsubmit={addPreset}>
+						<div class="grid gap-2 sm:grid-cols-3">
+							<Input bind:value={presetName} placeholder="Preset name" required />
+							<Input type="number" min="1" bind:value={presetValidity} placeholder="Days" />
+							<Input type="number" min="1" bind:value={presetActivations} placeholder="Activations" />
+						</div>
+						{#if data.limits.length}
+							<div class="space-y-1">
+								<p class="text-xs font-medium">Limits</p>
+								<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+									{#each data.limits as item (item.id)}
+										<label class="space-y-1 text-[11px] text-muted-foreground">{item.key}<Input type="number" min="0" bind:value={presetLimitValues[item.key]} /></label>
+									{/each}
+								</div>
+							</div>
+						{/if}
+						{#if data.features.length}
+							<div class="space-y-1">
+								<p class="text-xs font-medium">Features</p>
+								<div class="flex flex-wrap gap-2">
+									{#each data.features as item (item.id)}
+										<label class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px]"><input type="checkbox" value={item.key} bind:group={presetFeatureValues} /> {item.key}</label>
+									{/each}
+								</div>
+							</div>
+						{/if}
+						<Button type="submit" variant="outline">Save preset</Button>
+					</form>
 				</CardContent>
 			</Card>
 			<Card>

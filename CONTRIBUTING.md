@@ -44,6 +44,7 @@ just audit
 - Go: standard library style, `slog` for logs, no secrets in logs.
 - SQL: add a numbered migration and sqlc query, then `just sqlc`.
 - Svelte: runes mode, shadcn-svelte components, Lucide icons, restrained Motion.
+- Product limits and features must render as structured inputs in preset forms, not raw JSON textareas.
 - Keep API changes backward compatible for shipped clients.
 
 ## Commits
