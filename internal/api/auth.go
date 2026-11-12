@@ -23,7 +23,7 @@ func (a *App) AuthRouter() http.Handler {
 }
 
 func (a *App) authConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"site_key": a.cfg.TurnstileSiteKey})
+	writeJSON(w, http.StatusOK, map[string]string{"site_key": a.cfg.TurnstileSiteKey, "version": a.cfg.Version})
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -49,12 +49,12 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, a.auth.Cookie(session.ID))
-	writeJSON(w, http.StatusOK, map[string]string{"actor": session.Actor, "csrf": session.CSRF})
+	writeJSON(w, http.StatusOK, map[string]string{"actor": session.Actor, "csrf": session.CSRF, "version": a.cfg.Version})
 }
 
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	session := auth.SessionFrom(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"actor": session.Actor, "csrf": session.CSRF})
+	writeJSON(w, http.StatusOK, map[string]string{"actor": session.Actor, "csrf": session.CSRF, "version": a.cfg.Version})
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {

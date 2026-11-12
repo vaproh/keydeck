@@ -24,6 +24,8 @@ import (
 	"github.com/vaproh/keydeck/internal/server"
 )
 
+var version = "dev"
+
 func main() {
 	licensePort := env("PORT_LICENSE", "8080")
 	otaPort := env("PORT_OTA", "8081")
@@ -53,6 +55,7 @@ func main() {
 		slog.Error("configuration error", "err", err)
 		os.Exit(1)
 	}
+	cfg.Version = version
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel()}))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	pool, err := db.Open(ctx, cfg.DatabaseURL)

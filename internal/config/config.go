@@ -28,6 +28,7 @@ type Config struct {
 	TurnstileExpectedHost string
 	CookieSecure          bool
 	LogLevel              string
+	Version               string
 }
 
 func Load() (Config, error) {
@@ -49,6 +50,7 @@ func Load() (Config, error) {
 		TurnstileExpectedHost: os.Getenv("TURNSTILE_EXPECTED_HOSTNAME"),
 		CookieSecure:          envBool("COOKIE_SECURE", true),
 		LogLevel:              env("LOG_LEVEL", "info"),
+		Version:               env("VERSION", "dev"),
 	}
 	if c.AdminPasswordHash == "" {
 		return c, fmt.Errorf("ADMIN_PASSWORD_HASH is required")
