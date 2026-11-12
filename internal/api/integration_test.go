@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,9 +98,55 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM products WHERE id = $1`, autoProduct.Product.ID) })
-	recKey := do(http.MethodGet, fmt.Sprintf("/admin/products/%d", autoProduct.Product.ID), "", nil, "")
+	recKey := do(http.MethodGet, fmt.Sprintf("/admin/products/%d/overview", autoProduct.Product.ID), "", nil, "")
 	if recKey.Code != http.StatusOK {
-		t.Fatalf("auto product detail: %d", recKey.Code)
+		t.Fatalf("auto product overview: %d %s", recKey.Code, recKey.Body.String())
+	}
+	recPreset := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/presets", autoProduct.Product.ID), "csrf", map[string]any{
+		"name": "Monthly", "limits": map[string]int{"max_accounts": 10}, "features": []string{"warmup"}, "validity_days": 30, "max_activations": 1,
+	}, "")
+	if recPreset.Code != http.StatusCreated {
+		t.Fatalf("preset create: %d %s", recPreset.Code, recPreset.Body.String())
+	}
+	var preset struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(recPreset.Body.Bytes(), &preset); err != nil {
+		t.Fatal(err)
+	}
+	recEdit := do(http.MethodPatch, fmt.Sprintf("/admin/products/%d/presets/%d", autoProduct.Product.ID, preset.ID), "csrf", map[string]any{"name": "Monthly Plus"}, "")
+	if recEdit.Code != http.StatusOK {
+		t.Fatalf("preset edit: %d %s", recEdit.Code, recEdit.Body.String())
+	}
+	recLicense := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/licenses", autoProduct.Product.ID), "csrf", map[string]any{
+		"key_type": "trial", "trial_minutes": 15, "holder_name": "Activation test",
+	}, "")
+	if recLicense.Code != http.StatusCreated {
+		t.Fatalf("license create: %d %s", recLicense.Code, recLicense.Body.String())
+	}
+	var createdLicense struct {
+		Key     string `json:"key"`
+		License struct {
+			ID int64 `json:"id"`
+		} `json:"license"`
+	}
+	if err := json.Unmarshal(recLicense.Body.Bytes(), &createdLicense); err != nil {
+		t.Fatal(err)
+	}
+	activation, err := q.CreateActivation(ctx, store.CreateActivationParams{
+		LicenseID: createdLicense.License.ID, InstallationHash: strings.Repeat("a", 64),
+		MachineHash: "machine", AppVersion: "1.0.0", Ip: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recActivation := do(http.MethodPost, fmt.Sprintf("/admin/licenses/%d/activations/%d/revoke", createdLicense.License.ID, activation.ID), "csrf", nil, "")
+	if recActivation.Code != http.StatusOK {
+		t.Fatalf("activation revoke: %d %s", recActivation.Code, recActivation.Body.String())
+	}
+	reloaded, err := q.GetActivationByID(ctx, store.GetActivationByIDParams{ID: activation.ID, LicenseID: createdLicense.License.ID})
+	if err != nil || !reloaded.RevokedAt.Valid {
+		t.Fatalf("activation not revoked: %v %+v", err, reloaded)
 	}
 	rec := do(http.MethodPost, "/admin/tokens", "csrf", map[string]any{
 		"name": "agent-test", "scopes": []string{"products:write"}, "product_id": product.ID, "expires_days": 1,

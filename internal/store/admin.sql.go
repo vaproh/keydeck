@@ -238,3 +238,43 @@ func (q *Queries) Stats(ctx context.Context) (StatsRow, error) {
 	)
 	return i, err
 }
+
+const updatePreset = `-- name: UpdatePreset :one
+UPDATE plan_presets SET name = $3, limits_json = convert_from($4, 'UTF8')::jsonb,
+    features_json = convert_from($5, 'UTF8')::jsonb, validity_days = $6, max_activations = $7
+WHERE id = $1 AND product_id = $2 RETURNING id, product_id, name, limits_json, features_json, validity_days, max_activations, created_at
+`
+
+type UpdatePresetParams struct {
+	ID             int64  `json:"id"`
+	ProductID      int64  `json:"product_id"`
+	Name           string `json:"name"`
+	ConvertFrom    []byte `json:"convert_from"`
+	ConvertFrom_2  []byte `json:"convert_from_2"`
+	ValidityDays   *int32 `json:"validity_days"`
+	MaxActivations int32  `json:"max_activations"`
+}
+
+func (q *Queries) UpdatePreset(ctx context.Context, arg UpdatePresetParams) (PlanPreset, error) {
+	row := q.db.QueryRow(ctx, updatePreset,
+		arg.ID,
+		arg.ProductID,
+		arg.Name,
+		arg.ConvertFrom,
+		arg.ConvertFrom_2,
+		arg.ValidityDays,
+		arg.MaxActivations,
+	)
+	var i PlanPreset
+	err := row.Scan(
+		&i.ID,
+		&i.ProductID,
+		&i.Name,
+		&i.LimitsJson,
+		&i.FeaturesJson,
+		&i.ValidityDays,
+		&i.MaxActivations,
+		&i.CreatedAt,
+	)
+	return i, err
+}

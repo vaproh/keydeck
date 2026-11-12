@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/vaproh/keydeck/internal/auth"
 	"github.com/vaproh/keydeck/internal/config"
 	"github.com/vaproh/keydeck/internal/store"
@@ -53,5 +55,31 @@ func TestAuthConfigIncludesVersion(t *testing.T) {
 	}
 	if body["version"] != "1.2.3" || body["site_key"] != "site" {
 		t.Fatalf("unexpected config: %+v", body)
+	}
+}
+
+func TestLicenseStatus(t *testing.T) {
+	now := time.Now().UTC()
+	active := store.License{Status: "active", MaxActivations: 2, ExpiresAt: pgtype.Timestamptz{Time: now.Add(time.Hour), Valid: true}}
+	if got := licenseStatus(active, 1); got != "active" {
+		t.Fatalf("expected active, got %s", got)
+	}
+	revoked := active
+	revoked.Status = "revoked"
+	if got := licenseStatus(revoked, 1); got != "revoked" {
+		t.Fatalf("expected revoked, got %s", got)
+	}
+	expired := active
+	expired.ExpiresAt = pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true}
+	if got := licenseStatus(expired, 0); got != "expired" {
+		t.Fatalf("expected expired, got %s", got)
+	}
+	exhausted := active
+	if got := licenseStatus(exhausted, 2); got != "exhausted" {
+		t.Fatalf("expected exhausted, got %s", got)
+	}
+	lifetime := store.License{Status: "active", KeyType: "lifetime", MaxActivations: 1}
+	if got := licenseStatus(lifetime, 0); got != "active" {
+		t.Fatalf("expected lifetime active, got %s", got)
 	}
 }

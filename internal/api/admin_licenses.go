@@ -41,6 +41,7 @@ func (a *App) listLicenses(w http.ResponseWriter, r *http.Request) {
 		item := licenseJSON(licenseFromListRow(row))
 		item["product_slug"] = row.ProductSlug
 		item["activation_count"] = row.ActivationCount
+		item["display_status"] = licenseStatus(licenseFromListRow(row), row.ActivationCount)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"licenses": out})
@@ -201,7 +202,13 @@ func (a *App) getLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	activations, _ := a.q.ListActivations(r.Context(), id)
-	writeJSON(w, http.StatusOK, map[string]any{"license": licenseJSON(row), "activations": activations})
+	item := licenseJSON(row)
+	if product, err := a.q.GetProduct(r.Context(), row.ProductID); err == nil {
+		item["product_slug"] = product.Slug
+	}
+	item["activation_count"] = len(activations)
+	item["display_status"] = licenseStatus(row, int64(len(activations)))
+	writeJSON(w, http.StatusOK, map[string]any{"license": item, "activations": activations})
 }
 
 func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {
