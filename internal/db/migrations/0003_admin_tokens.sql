@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS admin_tokens (
     token_hash TEXT NOT NULL UNIQUE,
     token_hint TEXT NOT NULL DEFAULT '',
     scopes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-    product_id BIGINT NOT NULL DEFAULT 0 REFERENCES products(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL DEFAULT 0,
     expires_at TIMESTAMPTZ,
     last_used_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,

@@ -113,6 +113,12 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Token == "" {
 		t.Fatalf("token response: %v %s", err, rec.Body.String())
 	}
+	allRec := do(http.MethodPost, "/admin/tokens", "csrf", map[string]any{
+		"name": "all-products-agent", "scopes": []string{"products:read"}, "product_id": 0, "expires_days": 1,
+	}, "")
+	if allRec.Code != http.StatusCreated {
+		t.Fatalf("create all-products token: %d %s", allRec.Code, allRec.Body.String())
+	}
 	if rec := do(http.MethodPost, fmt.Sprintf("/admin/products/%d/limits", product.ID), "", map[string]string{"key": "max_test", "label": "Test"}, created.Token); rec.Code != http.StatusCreated {
 		t.Fatalf("agent limit add: %d %s", rec.Code, rec.Body.String())
 	}
