@@ -24,9 +24,12 @@ RETURNING *;
 
 -- name: UpdateLicense :one
 UPDATE licenses SET plan_name = $2, holder_name = $3,
-    limits_json = convert_from($4, 'UTF8')::jsonb,
-    features_json = convert_from($5, 'UTF8')::jsonb,
-    max_activations = $6, notes = $7, grace_seconds = $8, lease_ttl_seconds = $9, expires_at = $10
+    key_type = $4, trial_minutes = $5, validity_days = $6,
+    starts_on_activation = $7, one_time_activation = $8,
+    limits_json = convert_from($9, 'UTF8')::jsonb,
+    features_json = convert_from($10, 'UTF8')::jsonb,
+    max_activations = $11, notes = $12, grace_seconds = $13,
+    lease_ttl_seconds = $14, expires_at = $15, activation_expires_at = $16
 WHERE id = $1 RETURNING *;
 
 -- name: RevokeLicense :exec

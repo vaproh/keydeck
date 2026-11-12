@@ -567,23 +567,32 @@ func (q *Queries) TouchActivation(ctx context.Context, arg TouchActivationParams
 
 const updateLicense = `-- name: UpdateLicense :one
 UPDATE licenses SET plan_name = $2, holder_name = $3,
-    limits_json = convert_from($4, 'UTF8')::jsonb,
-    features_json = convert_from($5, 'UTF8')::jsonb,
-    max_activations = $6, notes = $7, grace_seconds = $8, lease_ttl_seconds = $9, expires_at = $10
+    key_type = $4, trial_minutes = $5, validity_days = $6,
+    starts_on_activation = $7, one_time_activation = $8,
+    limits_json = convert_from($9, 'UTF8')::jsonb,
+    features_json = convert_from($10, 'UTF8')::jsonb,
+    max_activations = $11, notes = $12, grace_seconds = $13,
+    lease_ttl_seconds = $14, expires_at = $15, activation_expires_at = $16
 WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds
 `
 
 type UpdateLicenseParams struct {
-	ID              int64              `json:"id"`
-	PlanName        string             `json:"plan_name"`
-	HolderName      string             `json:"holder_name"`
-	ConvertFrom     []byte             `json:"convert_from"`
-	ConvertFrom_2   []byte             `json:"convert_from_2"`
-	MaxActivations  int32              `json:"max_activations"`
-	Notes           string             `json:"notes"`
-	GraceSeconds    int32              `json:"grace_seconds"`
-	LeaseTtlSeconds int32              `json:"lease_ttl_seconds"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	ID                  int64              `json:"id"`
+	PlanName            string             `json:"plan_name"`
+	HolderName          string             `json:"holder_name"`
+	KeyType             string             `json:"key_type"`
+	TrialMinutes        *int32             `json:"trial_minutes"`
+	ValidityDays        *int32             `json:"validity_days"`
+	StartsOnActivation  bool               `json:"starts_on_activation"`
+	OneTimeActivation   bool               `json:"one_time_activation"`
+	ConvertFrom         []byte             `json:"convert_from"`
+	ConvertFrom_2       []byte             `json:"convert_from_2"`
+	MaxActivations      int32              `json:"max_activations"`
+	Notes               string             `json:"notes"`
+	GraceSeconds        int32              `json:"grace_seconds"`
+	LeaseTtlSeconds     int32              `json:"lease_ttl_seconds"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	ActivationExpiresAt pgtype.Timestamptz `json:"activation_expires_at"`
 }
 
 func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (License, error) {
@@ -591,6 +600,11 @@ func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (L
 		arg.ID,
 		arg.PlanName,
 		arg.HolderName,
+		arg.KeyType,
+		arg.TrialMinutes,
+		arg.ValidityDays,
+		arg.StartsOnActivation,
+		arg.OneTimeActivation,
 		arg.ConvertFrom,
 		arg.ConvertFrom_2,
 		arg.MaxActivations,
@@ -598,6 +612,7 @@ func (q *Queries) UpdateLicense(ctx context.Context, arg UpdateLicenseParams) (L
 		arg.GraceSeconds,
 		arg.LeaseTtlSeconds,
 		arg.ExpiresAt,
+		arg.ActivationExpiresAt,
 	)
 	var i License
 	err := row.Scan(
