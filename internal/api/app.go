@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -20,10 +21,19 @@ type App struct {
 	license *licensing.Service
 	ota     *ota.Service
 	auth    *auth.Service
+
+	activateLimiter   *ipLimiter
+	heartbeatLimiter  *ipLimiter
+	deactivateLimiter *ipLimiter
 }
 
 func New(cfg config.Config, pool *pgxpool.Pool) *App {
-	return &App{cfg: cfg, pool: pool, q: store.New(pool), license: licensing.New(pool, cfg), ota: ota.New(pool, cfg), auth: auth.New(cfg, store.New(pool))}
+	return &App{
+		cfg: cfg, pool: pool, q: store.New(pool), license: licensing.New(pool, cfg),
+		ota: ota.New(pool, cfg), auth: auth.New(cfg, store.New(pool)),
+		activateLimiter: newIPLimiter(10, time.Minute), heartbeatLimiter: newIPLimiter(120, time.Minute),
+		deactivateLimiter: newIPLimiter(10, time.Minute),
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

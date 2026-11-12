@@ -12,9 +12,9 @@ import (
 
 func (a *App) LicenseRouter() http.Handler {
 	r := chi.NewRouter()
-	r.Post("/activate", a.activate)
-	r.Post("/heartbeat", a.heartbeat)
-	r.Post("/deactivate", a.deactivate)
+	r.With(a.rateLimit(a.activateLimiter)).Post("/activate", a.activate)
+	r.With(a.rateLimit(a.heartbeatLimiter)).Post("/heartbeat", a.heartbeat)
+	r.With(a.rateLimit(a.deactivateLimiter)).Post("/deactivate", a.deactivate)
 	return r
 }
 
