@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -44,4 +45,8 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func (a *App) CleanupHeartbeats(ctx context.Context) (int64, error) {
+	return a.license.CleanupHeartbeats(ctx)
 }

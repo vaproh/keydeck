@@ -78,8 +78,8 @@ func (q *Queries) CountLicenses(ctx context.Context, dollar_1 int64) (int64, err
 }
 
 const createActivation = `-- name: CreateActivation :one
-INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at
+INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip, device_name, os, os_version, arch, user_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at, device_name, os, os_version, arch, user_agent
 `
 
 type CreateActivationParams struct {
@@ -88,6 +88,11 @@ type CreateActivationParams struct {
 	MachineHash      string `json:"machine_hash"`
 	AppVersion       string `json:"app_version"`
 	Ip               string `json:"ip"`
+	DeviceName       string `json:"device_name"`
+	Os               string `json:"os"`
+	OsVersion        string `json:"os_version"`
+	Arch             string `json:"arch"`
+	UserAgent        string `json:"user_agent"`
 }
 
 func (q *Queries) CreateActivation(ctx context.Context, arg CreateActivationParams) (Activation, error) {
@@ -97,6 +102,11 @@ func (q *Queries) CreateActivation(ctx context.Context, arg CreateActivationPara
 		arg.MachineHash,
 		arg.AppVersion,
 		arg.Ip,
+		arg.DeviceName,
+		arg.Os,
+		arg.OsVersion,
+		arg.Arch,
+		arg.UserAgent,
 	)
 	var i Activation
 	err := row.Scan(
@@ -109,6 +119,11 @@ func (q *Queries) CreateActivation(ctx context.Context, arg CreateActivationPara
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.DeviceName,
+		&i.Os,
+		&i.OsVersion,
+		&i.Arch,
+		&i.UserAgent,
 	)
 	return i, err
 }
@@ -233,7 +248,7 @@ func (q *Queries) ExtendLicense(ctx context.Context, arg ExtendLicenseParams) (L
 }
 
 const getActivation = `-- name: GetActivation :one
-SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at FROM activations WHERE license_id = $1 AND installation_hash = $2
+SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at, device_name, os, os_version, arch, user_agent FROM activations WHERE license_id = $1 AND installation_hash = $2
 `
 
 type GetActivationParams struct {
@@ -254,12 +269,17 @@ func (q *Queries) GetActivation(ctx context.Context, arg GetActivationParams) (A
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.DeviceName,
+		&i.Os,
+		&i.OsVersion,
+		&i.Arch,
+		&i.UserAgent,
 	)
 	return i, err
 }
 
 const getActivationByID = `-- name: GetActivationByID :one
-SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at FROM activations WHERE id = $1 AND license_id = $2
+SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at, device_name, os, os_version, arch, user_agent FROM activations WHERE id = $1 AND license_id = $2
 `
 
 type GetActivationByIDParams struct {
@@ -280,6 +300,11 @@ func (q *Queries) GetActivationByID(ctx context.Context, arg GetActivationByIDPa
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.DeviceName,
+		&i.Os,
+		&i.OsVersion,
+		&i.Arch,
+		&i.UserAgent,
 	)
 	return i, err
 }
@@ -355,7 +380,7 @@ func (q *Queries) GetLicenseByHash(ctx context.Context, keyHash string) (License
 }
 
 const listActivations = `-- name: ListActivations :many
-SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at FROM activations WHERE license_id = $1 ORDER BY created_at DESC
+SELECT id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at, device_name, os, os_version, arch, user_agent FROM activations WHERE license_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListActivations(ctx context.Context, licenseID int64) ([]Activation, error) {
@@ -377,6 +402,11 @@ func (q *Queries) ListActivations(ctx context.Context, licenseID int64) ([]Activ
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.RevokedAt,
+			&i.DeviceName,
+			&i.Os,
+			&i.OsVersion,
+			&i.Arch,
+			&i.UserAgent,
 		); err != nil {
 			return nil, err
 		}
@@ -550,7 +580,8 @@ func (q *Queries) RevokeLicense(ctx context.Context, id int64) error {
 }
 
 const touchActivation = `-- name: TouchActivation :exec
-UPDATE activations SET last_seen_at = now(), app_version = $3
+UPDATE activations SET last_seen_at = now(), app_version = $3, ip = $4,
+    device_name = $5, os = $6, os_version = $7, arch = $8, user_agent = $9
 WHERE license_id = $1 AND installation_hash = $2
 `
 
@@ -558,10 +589,26 @@ type TouchActivationParams struct {
 	LicenseID        int64  `json:"license_id"`
 	InstallationHash string `json:"installation_hash"`
 	AppVersion       string `json:"app_version"`
+	Ip               string `json:"ip"`
+	DeviceName       string `json:"device_name"`
+	Os               string `json:"os"`
+	OsVersion        string `json:"os_version"`
+	Arch             string `json:"arch"`
+	UserAgent        string `json:"user_agent"`
 }
 
 func (q *Queries) TouchActivation(ctx context.Context, arg TouchActivationParams) error {
-	_, err := q.db.Exec(ctx, touchActivation, arg.LicenseID, arg.InstallationHash, arg.AppVersion)
+	_, err := q.db.Exec(ctx, touchActivation,
+		arg.LicenseID,
+		arg.InstallationHash,
+		arg.AppVersion,
+		arg.Ip,
+		arg.DeviceName,
+		arg.Os,
+		arg.OsVersion,
+		arg.Arch,
+		arg.UserAgent,
+	)
 	return err
 }
 

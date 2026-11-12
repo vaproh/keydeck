@@ -183,6 +183,26 @@ func TestAgentTokenHTTPFlowWithPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := q.CreateLicenseEvent(ctx, store.CreateLicenseEventParams{
+		LicenseID: createdLicense.License.ID, ActivationID: &activation.ID, EventType: "heartbeat",
+		InstallationHash: activation.InstallationHash, DeviceName: "QA box", Os: "Linux", AppVersion: "1.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recLogs := do(http.MethodGet, fmt.Sprintf("/admin/licenses/%d", createdLicense.License.ID), "", nil, "")
+	if recLogs.Code != http.StatusOK {
+		t.Fatalf("license logs: %d", recLogs.Code)
+	}
+	var logs struct {
+		Heartbeats []map[string]any `json:"heartbeats"`
+	}
+	if err := json.Unmarshal(recLogs.Body.Bytes(), &logs); err != nil || len(logs.Heartbeats) != 1 {
+		t.Fatalf("license heartbeat logs: %v %s", err, recLogs.Body.String())
+	}
+	recBeats := do(http.MethodGet, fmt.Sprintf("/admin/heartbeats?license_id=%d", createdLicense.License.ID), "", nil, "")
+	if recBeats.Code != http.StatusOK {
+		t.Fatalf("global heartbeats: %d", recBeats.Code)
+	}
 	recActivation := do(http.MethodPost, fmt.Sprintf("/admin/licenses/%d/activations/%d/revoke", createdLicense.License.ID, activation.ID), "csrf", nil, "")
 	if recActivation.Code != http.StatusOK {
 		t.Fatalf("activation revoke: %d %s", recActivation.Code, recActivation.Body.String())

@@ -7,7 +7,7 @@
 	import { Toaster } from '#lib/components/ui/sonner';
 	import { ModeWatcher, mode, toggleMode } from 'mode-watcher';
 	import { me, logout, type Session } from '#lib/api';
-	import { LayoutDashboard, Boxes, KeyRound, RadioTower, ScrollText, LogOut, ArrowUpRight, Moon, Sun, ShieldCheck } from '@lucide/svelte';
+	import { LayoutDashboard, Boxes, KeyRound, RadioTower, ScrollText, LogOut, ArrowUpRight, Moon, Sun, ShieldCheck, HeartPulse } from '@lucide/svelte';
 
 	let { children } = $props();
 	let session = $state<Session | null>(null);
@@ -19,6 +19,7 @@
 		{ href: '/keys', label: 'Keys', icon: KeyRound },
 		{ href: '/releases', label: 'Releases', icon: RadioTower },
 		{ href: '/access', label: 'Agent access', icon: ShieldCheck },
+		{ href: '/heartbeats', label: 'Heartbeats', icon: HeartPulse },
 		{ href: '/audit', label: 'Audit', icon: ScrollText }
 	];
 

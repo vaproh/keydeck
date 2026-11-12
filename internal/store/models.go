@@ -18,6 +18,11 @@ type Activation struct {
 	LastSeenAt       pgtype.Timestamptz `json:"last_seen_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	RevokedAt        pgtype.Timestamptz `json:"revoked_at"`
+	DeviceName       string             `json:"device_name"`
+	Os               string             `json:"os"`
+	OsVersion        string             `json:"os_version"`
+	Arch             string             `json:"arch"`
+	UserAgent        string             `json:"user_agent"`
 }
 
 type AdminSession struct {
@@ -75,6 +80,23 @@ type License struct {
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	HolderName          string             `json:"holder_name"`
 	LeaseTtlSeconds     int32              `json:"lease_ttl_seconds"`
+}
+
+type LicenseEvent struct {
+	ID               int64              `json:"id"`
+	LicenseID        int64              `json:"license_id"`
+	ActivationID     *int64             `json:"activation_id"`
+	EventType        string             `json:"event_type"`
+	InstallationHash string             `json:"installation_hash"`
+	MachineHash      string             `json:"machine_hash"`
+	AppVersion       string             `json:"app_version"`
+	Ip               string             `json:"ip"`
+	DeviceName       string             `json:"device_name"`
+	Os               string             `json:"os"`
+	OsVersion        string             `json:"os_version"`
+	Arch             string             `json:"arch"`
+	UserAgent        string             `json:"user_agent"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type PlanPreset struct {

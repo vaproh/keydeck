@@ -58,11 +58,12 @@ SELECT * FROM activations WHERE license_id = $1 AND installation_hash = $2;
 SELECT count(*) FROM activations WHERE license_id = $1 AND revoked_at IS NULL;
 
 -- name: CreateActivation :one
-INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip)
-VALUES ($1, $2, $3, $4, $5) RETURNING *;
+INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip, device_name, os, os_version, arch, user_agent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *;
 
 -- name: TouchActivation :exec
-UPDATE activations SET last_seen_at = now(), app_version = $3
+UPDATE activations SET last_seen_at = now(), app_version = $3, ip = $4,
+    device_name = $5, os = $6, os_version = $7, arch = $8, user_agent = $9
 WHERE license_id = $1 AND installation_hash = $2;
 
 -- name: RevokeActivation :exec

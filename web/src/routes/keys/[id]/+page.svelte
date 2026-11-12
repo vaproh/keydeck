@@ -23,7 +23,13 @@
 		id: number; installation_hash: string; machine_hash: string; app_version: string;
 		ip: string; last_seen_at: string; created_at: string; revoked_at: string | null;
 	};
-	type Payload = { license: License; activations: Activation[] };
+	type Event = {
+		id: number; activation_id: number | null; matched: boolean; kind: string;
+		installation_hash: string; machine_hash: string; app_version: string; ip: string;
+		device_name: string; os: string; os_version: string; arch: string;
+		user_agent: string; created_at: string;
+	};
+	type Payload = { license: License; activations: Activation[]; activation_logs: Event[]; heartbeats: Event[] };
 
 	let data = $state<Payload | null>(null);
 	let error = $state('');
@@ -197,6 +203,46 @@
 					</CardContent>
 				</Card>
 
+
+				<Card>
+					<CardHeader><CardTitle>Activation logs</CardTitle></CardHeader>
+					<CardContent>
+						<Table>
+							<TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Event</TableHead><TableHead>Device</TableHead><TableHead>OS</TableHead><TableHead>IP</TableHead></TableRow></TableHeader>
+							<TableBody>
+								{#each data.activation_logs as event (event.id)}
+									<TableRow>
+										<TableCell class="text-xs text-muted-foreground">{when(event.created_at)}</TableCell>
+										<TableCell><Badge variant="outline">{event.kind}</Badge></TableCell>
+										<TableCell class="text-xs">{event.device_name || 'Unknown device'}<p class="font-mono text-[10px] text-muted-foreground">{short(event.installation_hash)}</p></TableCell>
+										<TableCell class="text-xs">{event.os || '—'} {event.os_version}</TableCell>
+										<TableCell class="font-mono text-xs">{event.ip || '—'}</TableCell>
+									</TableRow>
+								{:else}<TableRow><TableCell colspan={5} class="py-8 text-center text-sm text-muted-foreground">No activation logs yet.</TableCell></TableRow>{/each}
+							</TableBody>
+						</Table>
+					</CardContent>
+				</Card>
+
+				<Card>
+					<CardHeader><CardTitle>Heartbeat logs <span class="ml-2 text-xs font-normal text-muted-foreground">last 7 days</span></CardTitle></CardHeader>
+					<CardContent>
+						<Table>
+							<TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Match</TableHead><TableHead>Device</TableHead><TableHead>App</TableHead><TableHead>IP</TableHead></TableRow></TableHeader>
+							<TableBody>
+								{#each data.heartbeats as event (event.id)}
+									<TableRow>
+										<TableCell class="text-xs text-muted-foreground">{when(event.created_at)}</TableCell>
+										<TableCell><Badge variant={event.matched ? 'secondary' : 'outline'}>{event.matched ? 'matched' : 'unknown'}</Badge></TableCell>
+										<TableCell class="text-xs">{event.device_name || 'Unknown device'}</TableCell>
+										<TableCell class="text-xs">{event.app_version || '—'}</TableCell>
+										<TableCell class="font-mono text-xs">{event.ip || '—'}</TableCell>
+									</TableRow>
+								{:else}<TableRow><TableCell colspan={5} class="py-8 text-center text-sm text-muted-foreground">No heartbeats in the last 7 days.</TableCell></TableRow>{/each}
+							</TableBody>
+						</Table>
+					</CardContent>
+				</Card>
 				<Card>
 					<CardHeader><CardTitle>Limits and features</CardTitle></CardHeader>
 					<CardContent class="grid gap-4 sm:grid-cols-2">

@@ -237,6 +237,29 @@ POST /v1/deactivate
 
 Same body. It revokes that installation and frees a slot.
 
+## Device telemetry
+
+Activation and heartbeat requests may include device data:
+
+```json
+{
+  "key": "REO-...",
+  "installation_hash": "<64 hex>",
+  "machine_hash": "<optional>",
+  "app_version": "1.4.0",
+  "product": "reorchestra",
+  "device_name": "DESKTOP-7F2A",
+  "os": "Windows",
+  "os_version": "11",
+  "arch": "amd64",
+  "user_agent": "ReOrchestra/1.4.0"
+}
+```
+
+Every activate, heartbeat and deactivate is written to an event log. The activation ID links heartbeats to the activation record. If no activation matches, the heartbeat is stored with `activation_id: null` and shown as `unknown`.
+
+Heartbeat events are retained for **7 days**; activation and deactivation events are retained. The server prunes old heartbeats every six hours.
+
 ## 6. Verify the lease
 
 The lease is:

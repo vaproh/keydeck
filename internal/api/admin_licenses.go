@@ -208,7 +208,20 @@ func (a *App) getLicense(w http.ResponseWriter, r *http.Request) {
 	}
 	item["activation_count"] = len(activations)
 	item["display_status"] = licenseStatus(row, int64(len(activations)))
-	writeJSON(w, http.StatusOK, map[string]any{"license": item, "activations": activations})
+	events, _ := a.q.ListLicenseEvents(r.Context(), store.ListLicenseEventsParams{LicenseID: id, Limit: 200})
+	heartbeats, _ := a.q.ListLicenseHeartbeats(r.Context(), store.ListLicenseHeartbeatsParams{LicenseID: id, Limit: 200})
+	activationLogs := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		activationLogs = append(activationLogs, eventJSON(event))
+	}
+	beatLogs := make([]map[string]any, 0, len(heartbeats))
+	for _, event := range heartbeats {
+		beatLogs = append(beatLogs, eventJSON(event))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"license": item, "activations": activations,
+		"activation_logs": activationLogs, "heartbeats": beatLogs,
+	})
 }
 
 func (a *App) updateLicense(w http.ResponseWriter, r *http.Request) {

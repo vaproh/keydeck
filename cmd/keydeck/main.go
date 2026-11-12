@@ -74,6 +74,26 @@ func main() {
 	}
 	app := api.New(cfg, pool)
 	defer stop()
+	go func() {
+		cleanup := func() {
+			if removed, err := app.CleanupHeartbeats(ctx); err != nil {
+				logger.Error("heartbeat cleanup failed", "err", err)
+			} else if removed > 0 {
+				logger.Info("heartbeat cleanup", "removed", removed)
+			}
+		}
+		cleanup()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanup()
+			}
+		}
+	}()
 
 	servers := []*http.Server{
 		{Addr: ":" + licensePort, Handler: server.License(logger, app.LicenseRouter()), ReadHeaderTimeout: 10 * time.Second},
