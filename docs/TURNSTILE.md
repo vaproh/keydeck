@@ -7,7 +7,7 @@ Keydeck uses Cloudflare Turnstile on the admin login form only. License, heartbe
 1. Open the Cloudflare dashboard → Turnstile → Add widget.
 2. Add the admin hostname, for example `admin.example.com`.
 3. Widget mode: **Managed**.
-4. Appearance: **Interaction-only**.
+4. Appearance: **Always** (the login page renders the widget visibly).
 5. Copy the **Site Key** and **Secret Key**.
 
 The widget is rendered explicitly by the Svelte login page. The public Site Key is fetched at runtime from `GET /api/auth/config`; it is not baked into the frontend build. The Secret Key stays in the Go process.
@@ -46,7 +46,7 @@ For local UI work, Cloudflare publishes test keys. Use them only in an isolated 
 
 - Site Key: `1x00000000000000000000AA` (visible, always passes)
 - Site Key: `1x00000000000000000000BB` (invisible, always passes)
-- Site Key: `1x00000000000000000000AA` (always passes) or `3x00000000000000000000FF` (forces interaction)
+- Site Key: `3x00000000000000000000FF` (forces interaction)
 - Secret Key: `1x0000000000000000000000000000000AA` (always passes)
 - Secret Key: `2x0000000000000000000000000000000AA` (always fails)
 - Secret Key: `3x0000000000000000000000000000000AA` (already spent)

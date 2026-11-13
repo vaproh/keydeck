@@ -25,7 +25,7 @@ The release workflow verifies that the tagged commit is on the matching branch:
 - stable tag must be on `main`
 - pre-release tag must be on `beta`
 
-It then runs tests, builds the frontend, pushes the multi-arch image, creates the GitHub release with generated notes, and attaches the self-contained VPS bundle.
+It then runs tests with the race detector and coverage gate, builds the frontend, pushes the Linux amd64 image, creates the GitHub release with generated notes, and attaches the self-contained VPS bundle.
 
 ## Agent workflow
 

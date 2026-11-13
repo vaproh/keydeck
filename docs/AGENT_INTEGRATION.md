@@ -379,7 +379,7 @@ It must:
 - stage the update, self-test, and roll back on failure
 - preserve user data
 
-Never put `KEYDECK_ADMIN_TOKEN` in the shipped client. OTA check/download endpoints are public; the admin token is only for publishing.
+Never put `KEYDECK_ADMIN_TOKEN` in the shipped client. OTA check/download endpoints are public today; the admin token is only for publishing. Lease-bound OTA is tracked in issue #23.
 
 ## 11. OTA client
 
@@ -389,14 +389,14 @@ Update base URL: `https://<ota-domain>/v1`.
 GET /v1/update-check?product=reorchestra&channel=stable&platform=windows-amd64&current=1.0.0
 ```
 
-The response includes the release metadata, signed manifest, and download URL. Verify the manifest with the product's update public key, download, verify SHA-256, and only then install.
+The response includes the release metadata, signed manifest, and download URL. Verify the manifest with the product's update public key, download, verify SHA-256, and only then install. This endpoint is public today; do not assume a license is required until issue #23 ships.
 
 ## 12. Agent checklist
 
 Use this as the definition of done when adding a product, limit, or feature:
 
 - [ ] Product exists with the correct slug and key prefix.
-- [ ] License and update public keys are registered.
+- [ ] Product signing keys were generated server-side or registered explicitly.
 - [ ] Every new limit is defined in the admin and the client.
 - [ ] Every new feature is defined in the admin and the client.
 - [ ] A test key exists with the intended limits/features.
