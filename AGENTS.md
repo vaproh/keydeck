@@ -79,7 +79,6 @@ Prerequisites: Go 1.27, Node 24, pnpm 12, Postgres 18, Docker.
 
 ```bash
 cp .env.example .env
-go run ./cmd/keydeck keygen reorchestra
 go run ./cmd/keydeck passwd
 just test
 just frontend
@@ -98,11 +97,14 @@ pnpm build
 
 The admin panel is served under `/admin`. In development, Vite proxies `/api` to the admin listener.
 
+Product signing keys are generated automatically on product creation and stored under `SIGNING_KEYS_DIR`. `keygen` remains available only for operators who want env-managed seeds.
+
 ## Tests
 
 - `just test` runs Go unit tests and Postgres integration tests when `TEST_DATABASE_URL` is set.
 - CI starts Postgres 18 and sets `TEST_DATABASE_URL`.
 - Add a unit test for pure logic and a Postgres test for query/service behavior.
+- Keep total Go coverage at or above the CI gate (45%).
 - Frontend checks: `svelte-check`, production build, `pnpm audit --prod`.
 
 ## Database changes
@@ -133,10 +135,11 @@ The admin is a private control room, not a marketing site. Use the existing ston
 
 ## Security boundaries
 
-- Admin is private: TLS at HAProxy/TierHive plus login, Turnstile, Argon2id, TOTP, and a network ACL where available.
+- Admin is private: TLS at HAProxy/TierHive plus login, Turnstile, Argon2id, TOTP, and a network ACL where available. `ADMIN_ALLOW` is no longer an application setting.
 - License/OTA listeners are public but never expose admin routes.
 - Per-product license and update signing keys are separate.
 - Download tokens are short-lived and HMAC-signed.
+- OTA update-check/download are public today; do not describe them as license-gated until issue #23 is implemented.
 - Revocation wins over cached leases.
 - Desktop clients can be patched by a determined local admin; do not claim DRM-grade impossibility.
 

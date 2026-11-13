@@ -46,6 +46,8 @@ just audit
 - Svelte: runes mode, shadcn-svelte components, Lucide icons, restrained Motion.
 - Product limits and features must render as structured inputs in preset forms, not raw JSON textareas.
 - Keep API changes backward compatible for shipped clients.
+- Keep Go coverage at or above the CI gate (45%).
+- Update every affected Markdown file when behavior, setup, or release flow changes.
 
 ## Commits
 
