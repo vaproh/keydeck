@@ -24,11 +24,13 @@ Existing license services are SaaS-first, expensive, or tied to one product. Key
 - The server is the sole authority for validity, activation, expiry, limits, and revocation.
 - One deployment serves multiple products.
 - Trial, timed, and lifetime keys are first-class.
-- The operator can change limits and expiry per key from an admin panel.
+- The operator can change limits, features, holder, expiry, grace, and lease TTL per key, including after activation.
 - Every key can carry a holder name so the operator knows who it belongs to.
 - Coding agents can use scoped API tokens without the admin password.
 - The admin panel supports light and dark themes and keeps a seven-day session.
 - OTA delivery is product-scoped, signed, and verifiable.
+- Activation and heartbeat events include device telemetry, with heartbeats retained for seven days.
+- Plan presets use structured limit inputs and feature checkboxes.
 - Deployment is one Docker Compose stack on a VPS.
 - The repository is open source and releases are reproducible from tags.
 
@@ -59,6 +61,8 @@ Every key belongs to one product and carries:
 | `features_json` | Enabled features, e.g. `["warmup","campaigns"]` |
 | `expires_at` | Absolute expiry for issue-started timed keys |
 | `max_activations` | Maximum live installations |
+| `holder_name` | Operator label for the customer or machine |
+| `lease_ttl_seconds` | Per-key signed-lease lifetime, default 86400 |
 | `status` | `active` or `revoked` |
 | `notes` | Operator-only context |
 
@@ -130,19 +134,22 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 - Download URLs are short-lived and HMAC-signed.
 - `min_version`, `mandatory`, and `security` are explicit.
 - Rollout percentage is stored for future use.
+- Update check and artifact download are public today; lease-bound OTA is tracked in issue #23.
 - The update service never updates the license server or admin panel.
 
 ## 9. Admin requirements
 
-- Private hostname, TLS, IP allowlist.
+- Private hostname, TLS at HAProxy/TierHive, and a network ACL where available.
 - Argon2id password, TOTP, Cloudflare Turnstile.
 - HttpOnly, SameSite cookie; CSRF token on mutations.
 - Login rate limit.
-- Product switcher.
+- Product list with per-page product filters.
 - Product limits, features, and plan presets.
 - Plan presets expose product-defined limits as number inputs and features as checkboxes; raw JSON is only an API detail.
 - Issue, inspect, extend, reset, and revoke keys.
 - Release upload with SHA-256 and notes.
+- Key detail: activations, heartbeat logs, derived status, edit/extend/reset/revoke.
+- Global heartbeat view with product filter.
 - Audit log for privileged actions.
 - No secrets in HTML or logs.
 
@@ -160,13 +167,14 @@ Deactivation revokes one installation and frees a slot. It is idempotent.
 ## 11. Release requirements
 
 - Tag `v*` triggers CI.
-- Tests and frontend build must pass.
-- Build Linux amd64 binary.
+- Stable tags come from `main`; pre-release tags come from `beta`.
+- Tests, race detector, coverage gate, and frontend build must pass.
+- Build Linux amd64 binary and image.
 - Build and push GHCR image.
 - Generate release notes automatically.
 - Attach a versioned VPS bundle.
 - Publish the GitHub release.
-- Never publish from a non-`main` commit.
+- Never publish a stable tag from a non-`main` commit; beta tags must be on `beta`.
 
 ## 12. Success criteria
 

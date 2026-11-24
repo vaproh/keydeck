@@ -38,15 +38,18 @@ Postgres is the source of truth for products, keys, activations, releases, sessi
 
 - **Trial, timed, and lifetime keys** with server-authoritative clocks.
 - **Per-key limits and features** managed in the admin panel. No pricing or billing.
-- **Per-key holder names** so every key shows who or what it belongs to.
+- **Per-key holder names, plan presets, editable keys, and per-key lease TTL.**
+- **Activation and heartbeat telemetry** with device/OS/version, real client IP, and seven-day heartbeat retention.
 - **Multi-product** by design. One deployment can serve every tool you ship.
 - **Trial protection**: starts on first activation, one activation, no grace.
 - **Lifetime keys** with no expiry but full revocation and heartbeat checks.
 - **Signed OTA manifests** with SHA-256, stable/beta channels, and short-lived download URLs.
+- **OTA is currently public**, not license-gated; see issue #23 for the planned lease-bound update check.
 - **Scoped agent tokens** for project agents: product-limited, scope-limited, revocable, and shown once.
 - **Private admin** with Argon2id, TOTP, Cloudflare Turnstile, CSRF, rate limiting, seven-day sessions, and light/dark mode. See [docs/TURNSTILE.md](docs/TURNSTILE.md).
 - **Structured JSON logs** with request IDs. Keys, tokens, cookies, and bodies are never logged.
 - **Docker-only deployment** with HAProxy/TierHive TLS and Watchtower-based continuous deployment.
+- **Structured product settings**: limits, features, and plan presets use number inputs and checkboxes, not raw JSON.
 
 ## Stack
 
@@ -130,7 +133,8 @@ The stack includes Watchtower. When a new `latest` image is published, it pulls 
 - **Trial**: starts on first activation, one-time, one activation, zero grace.
 - **Timed**: starts on issue or first activation, configurable days, admin extendable.
 - **Lifetime**: no expiry, still revocable and heartbeat-checked.
-- Per-key `plan_name`, `holder_name`, `limits`, `features`, `max_activations`, expiry, and notes.
+- Per-key `plan_name`, `holder_name`, `limits`, `features`, `max_activations`, expiry, grace, lease TTL, and notes.
+- Keys remain editable after creation: type, trial/validity, starts-on-activation, limits, features, holder, expiry, and lease TTL.
 - The server is the key clock. Clients use `server_now`, `expires_at`, and `remaining_seconds`; the local clock is never authoritative.
 - Signed Ed25519 leases bind the product, installation, plan, limits, and expiry.
 
@@ -141,6 +145,7 @@ The stack includes Watchtower. When a new `latest` image is published, it pulls 
 - Short-lived HMAC download URLs.
 - Stable and beta channels.
 - Artifacts are stored under `ARTIFACTS_DIR` and mounted as a Docker volume.
+- `/v1/update-check` and downloads are public today. License-gated OTA is tracked in issue #23.
 
 ## Operations
 
