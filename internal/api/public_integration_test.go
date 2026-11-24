@@ -141,3 +141,78 @@ func TestLicenseAndOTAHTTPWithPostgres(t *testing.T) {
 		t.Fatalf("unexpected artifact: %q", got)
 	}
 }
+
+// A deactivated installation that activates again must get a lease back, not a
+// 500 from the unique (license_id, installation_hash) constraint.
+func TestReactivateAfterDeactivateWithPostgres(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := db.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	q := store.New(pool)
+	slug := fmt.Sprintf("reactivate-itest-%d", time.Now().UnixNano())
+	product, err := q.CreateProduct(ctx, store.CreateProductParams{Slug: slug, Name: "Reactivate", Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM products WHERE id = $1`, product.ID) })
+	if _, err := q.UpsertProductKey(ctx, store.UpsertProductKeyParams{
+		ProductID: product.ID, LicensePublicKey: "license", UpdatePublicKey: "update", KeyPrefix: "RE",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := rand.Read(seed); err != nil {
+		t.Fatal(err)
+	}
+	envSlug := strings.ToUpper(strings.ReplaceAll(slug, "-", "_"))
+	t.Setenv("LICENSE_SIGNING_KEY_"+envSlug, base64.StdEncoding.EncodeToString(seed))
+
+	rawKey, hash, last4 := licensing.NewKey("RE")
+	if _, err := q.CreateLicense(ctx, store.CreateLicenseParams{
+		ProductID: product.ID, KeyHash: hash, KeyLast4: last4, PlanName: "Lifetime",
+		KeyType: "lifetime", MaxActivations: 1,
+		ConvertFrom: []byte(`{"max_accounts":1}`), ConvertFrom_2: []byte(`[]`),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(365 * 24 * time.Hour), Valid: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := New(config.Config{AdminActor: "operator"}, pool)
+	router := app.LicenseRouter()
+	install := strings.Repeat("b", 64)
+	body, _ := json.Marshal(map[string]string{
+		"key": rawKey, "installation_hash": install, "product": slug, "app_version": "test",
+	})
+	call := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)))
+		return rec
+	}
+	if rec := call("/activate"); rec.Code != http.StatusOK {
+		t.Fatalf("first activate: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call("/deactivate"); rec.Code != http.StatusOK {
+		t.Fatalf("deactivate: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := call("/activate")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("re-activate: %d %s", rec.Code, rec.Body.String())
+	}
+	var again map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &again); err != nil || again["lease"] == "" {
+		t.Fatalf("re-activation response: %v %s", err, rec.Body.String())
+	}
+	if rec := call("/heartbeat"); rec.Code != http.StatusOK {
+		t.Fatalf("heartbeat after re-activate: %d %s", rec.Code, rec.Body.String())
+	}
+}

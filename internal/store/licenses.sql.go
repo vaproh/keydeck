@@ -506,6 +506,62 @@ func (q *Queries) ListLicenses(ctx context.Context, arg ListLicensesParams) ([]L
 	return items, nil
 }
 
+const rearmActivation = `-- name: RearmActivation :one
+UPDATE activations SET revoked_at = NULL, last_seen_at = now(), machine_hash = $3,
+    app_version = $4, ip = $5, device_name = $6, os = $7, os_version = $8,
+    arch = $9, user_agent = $10
+WHERE license_id = $1 AND installation_hash = $2
+RETURNING id, license_id, installation_hash, machine_hash, app_version, ip, last_seen_at, created_at, revoked_at, device_name, os, os_version, arch, user_agent
+`
+
+type RearmActivationParams struct {
+	LicenseID        int64  `json:"license_id"`
+	InstallationHash string `json:"installation_hash"`
+	MachineHash      string `json:"machine_hash"`
+	AppVersion       string `json:"app_version"`
+	Ip               string `json:"ip"`
+	DeviceName       string `json:"device_name"`
+	Os               string `json:"os"`
+	OsVersion        string `json:"os_version"`
+	Arch             string `json:"arch"`
+	UserAgent        string `json:"user_agent"`
+}
+
+// A deactivated installation that comes back must reuse its row: the unique
+// (license_id, installation_hash) constraint makes a fresh insert impossible.
+func (q *Queries) RearmActivation(ctx context.Context, arg RearmActivationParams) (Activation, error) {
+	row := q.db.QueryRow(ctx, rearmActivation,
+		arg.LicenseID,
+		arg.InstallationHash,
+		arg.MachineHash,
+		arg.AppVersion,
+		arg.Ip,
+		arg.DeviceName,
+		arg.Os,
+		arg.OsVersion,
+		arg.Arch,
+		arg.UserAgent,
+	)
+	var i Activation
+	err := row.Scan(
+		&i.ID,
+		&i.LicenseID,
+		&i.InstallationHash,
+		&i.MachineHash,
+		&i.AppVersion,
+		&i.Ip,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.RevokedAt,
+		&i.DeviceName,
+		&i.Os,
+		&i.OsVersion,
+		&i.Arch,
+		&i.UserAgent,
+	)
+	return i, err
+}
+
 const resetLicense = `-- name: ResetLicense :one
 UPDATE licenses SET first_activated_at = NULL, activation_expires_at = NULL, used_at = NULL,
     status = 'active' WHERE id = $1 RETURNING id, product_id, key_hash, key_last4, plan_name, key_type, trial_minutes, validity_days, starts_on_activation, one_time_activation, grace_seconds, first_activated_at, activation_expires_at, used_at, limits_json, features_json, expires_at, max_activations, status, notes, created_at, holder_name, lease_ttl_seconds

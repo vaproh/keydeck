@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/vaproh/keydeck/internal/auth"
 	"github.com/vaproh/keydeck/internal/licensing"
@@ -70,7 +71,17 @@ func licenseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, licensing.ErrMalformed):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case isUniqueViolation(err):
+		// a concurrent or replayed activation lost the insert race; the client
+		// should retry the call rather than be told the service is down
+		writeError(w, http.StatusConflict, "activation already exists; retry")
 	default:
 		writeError(w, http.StatusInternalServerError, "license service unavailable")
 	}
+}
+
+// isUniqueViolation reports a Postgres 23505 without leaking driver details.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

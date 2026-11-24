@@ -61,6 +61,15 @@ SELECT count(*) FROM activations WHERE license_id = $1 AND revoked_at IS NULL;
 INSERT INTO activations (license_id, installation_hash, machine_hash, app_version, ip, device_name, os, os_version, arch, user_agent)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *;
 
+-- name: RearmActivation :one
+-- A deactivated installation that comes back must reuse its row: the unique
+-- (license_id, installation_hash) constraint makes a fresh insert impossible.
+UPDATE activations SET revoked_at = NULL, last_seen_at = now(), machine_hash = $3,
+    app_version = $4, ip = $5, device_name = $6, os = $7, os_version = $8,
+    arch = $9, user_agent = $10
+WHERE license_id = $1 AND installation_hash = $2
+RETURNING *;
+
 -- name: TouchActivation :exec
 UPDATE activations SET last_seen_at = now(), app_version = $3, ip = $4,
     device_name = $5, os = $6, os_version = $7, arch = $8, user_agent = $9

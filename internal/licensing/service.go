@@ -120,6 +120,9 @@ func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allow
 
 	activation, err := s.q.GetActivation(ctx, store.GetActivationParams{LicenseID: row.ID, InstallationHash: req.InstallationHash})
 	hasActivation := err == nil && !activation.RevokedAt.Valid
+	// A deactivated installation keeps its row; coming back re-arms it instead
+	// of inserting a second one, which the unique constraint would reject.
+	wasRevoked := err == nil && activation.RevokedAt.Valid
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Response{}, err
 	}
@@ -142,18 +145,34 @@ func (s *Service) run(ctx context.Context, req ActivateRequest, ip string, allow
 		if count >= int64(row.MaxActivations) {
 			return Response{}, ErrActivation
 		}
-		created, err := s.q.CreateActivation(ctx, store.CreateActivationParams{
-			LicenseID:        row.ID,
-			InstallationHash: req.InstallationHash,
-			MachineHash:      req.MachineHash,
-			AppVersion:       req.AppVersion,
-			Ip:               ip,
-			DeviceName:       req.DeviceName,
-			Os:               req.OS,
-			OsVersion:        req.OSVersion,
-			Arch:             req.Arch,
-			UserAgent:        req.UserAgent,
-		})
+		var created store.Activation
+		if wasRevoked {
+			created, err = s.q.RearmActivation(ctx, store.RearmActivationParams{
+				LicenseID:        row.ID,
+				InstallationHash: req.InstallationHash,
+				MachineHash:      req.MachineHash,
+				AppVersion:       req.AppVersion,
+				Ip:               ip,
+				DeviceName:       req.DeviceName,
+				Os:               req.OS,
+				OsVersion:        req.OSVersion,
+				Arch:             req.Arch,
+				UserAgent:        req.UserAgent,
+			})
+		} else {
+			created, err = s.q.CreateActivation(ctx, store.CreateActivationParams{
+				LicenseID:        row.ID,
+				InstallationHash: req.InstallationHash,
+				MachineHash:      req.MachineHash,
+				AppVersion:       req.AppVersion,
+				Ip:               ip,
+				DeviceName:       req.DeviceName,
+				Os:               req.OS,
+				OsVersion:        req.OSVersion,
+				Arch:             req.Arch,
+				UserAgent:        req.UserAgent,
+			})
+		}
 		if err != nil {
 			return Response{}, err
 		}
